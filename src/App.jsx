@@ -1,25 +1,17 @@
 import React, { useState, useEffect } from 'react';
 
-// --- PALETA MONDRIAN ---
+// --- CONSTANTES E CONFIGURAÇÕES ---
 const COLORS = {
   mustard: '#e2b714',
   crimson: '#c32148',
   teal: '#008080',
   black: '#111111',
-  white: '#ffffff',
-  lightGray: '#f4f4f4'
+  white: '#ffffff'
 };
 const PIE_COLORS = [COLORS.crimson, COLORS.mustard, COLORS.teal, '#333333', '#777777', '#aaaaaa', '#dddddd'];
 
-const ESTADO_STATUS_OPTIONS = [
-  "", "Semeadura <100", "Semeadouro <35", "Germinação >100", 
-  "Crescimento >500", "Raiz >1000", "Árvore >5000", "Colheita"
-];
-
-const CAPITAL_ESTRATEGIA_OPTIONS = [
-  "", "Mobilização Ativa", "Reunião de Núcleo", "Ação de Rua (Panfletagem)",
-  "Estratégia Digital", "Manutenção Territorial", "Observação"
-];
+const ESTADO_STATUS_OPTIONS = ["", "Semeadura <100", "Semeadouro <35", "Germinação >100", "Crescimento >500", "Raiz >1000", "Árvore >5000", "Colheita"];
+const CAPITAL_ESTRATEGIA_OPTIONS = ["", "Mobilização Ativa", "Reunião de Núcleo", "Ação de Rua (Panfletagem)", "Estratégia Digital", "Manutenção Territorial", "Observação"];
 
 const getScriptUrl = () => {
   try {
@@ -30,14 +22,12 @@ const getScriptUrl = () => {
 };
 const SCRIPT_URL = getScriptUrl(); 
 
-// --- FORMATADORES DE DADOS ---
+// --- FUNÇÕES UTILITÁRIAS ---
 const formatCurrency = (val) => {
   if (!val) return "R$ 0,00";
   if (typeof val === 'string' && val.includes('R$')) return val; 
   const numeric = parseFloat(val);
-  if (isNaN(numeric)) return val;
-  // Arredondamento estatístico padrão brasileiro
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeric);
+  return isNaN(numeric) ? val : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeric);
 };
 
 const formatPercentage = (val) => {
@@ -45,26 +35,36 @@ const formatPercentage = (val) => {
   if (typeof val === 'string' && val.includes('%')) return val;
   let num = parseFloat(val);
   if (isNaN(num)) return val;
-  // Se o valor for decimal (ex: 0.1823), multiplicamos por 100
   if (num <= 1 && num > 0) num = num * 100;
   return num.toFixed(2).replace('.', ',') + '%';
 };
 
 const parseSortValue = (val) => {
-  if (val === null || val === undefined || val === "") return -Infinity; 
+  if (!val && val !== 0) return -Infinity; 
   if (typeof val === 'number') return val;
   let str = String(val).trim();
   
-  if (str.startsWith('R$')) return parseFloat(str.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
-  if (str.endsWith('%')) return parseFloat(str.replace('%', '').replace(',', '.').trim()) || 0;
+  if (str.startsWith('R$')) return parseFloat(str.replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0;
+  if (str.endsWith('%')) return parseFloat(str.replace('%', '').replace(',', '.')) || 0;
   if (/^\d{1,3}(\.\d{3})*$/.test(str)) return parseInt(str.replace(/\./g, ''), 10);
   
-  const parsed = parseFloat(str.replace(',', '.')); // Lida com decimais
-  if (!isNaN(parsed) && String(parsed) === str.replace(',', '.')) return parsed; 
-  
-  return str.toLowerCase();
+  const parsed = parseFloat(str.replace(',', '.')); 
+  return (!isNaN(parsed) && String(parsed) === str.replace(',', '.')) ? parsed : str.toLowerCase();
 };
 
+const getShortHeader = (headerString) => {
+  const s = String(headerString).toUpperCase();
+  if (s.includes('DIÁRIAS')) return 'DIÁRIAS';
+  if (s.includes('EQUIPE')) return 'ARTICULADOR';
+  if (s.includes('VALOR TOTAL DE EMENDAS')) return s.replace('VALOR TOTAL DE EMENDAS', 'EMENDAS').trim();
+  if (s.includes('% DOS VOTOS')) return '% VOTOS';
+  if (s.includes('DIRETÓRIO')) return 'DIRETÓRIO';
+  if (s.includes('CÍRCULOS TERRITORIAIS')) return 'STATUS (CÍRCULOS)';
+  if (s.includes('BAIRRO REPLAN')) return 'BAIRRO';
+  return s;
+};
+
+// --- COMPONENTE PRINCIPAL ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('DASHBOARD'); 
   const [viewMode, setViewMode] = useState('table'); 
@@ -113,24 +113,22 @@ export default function App() {
       });
       setLastSaved(new Date());
     } catch (err) {
-      alert("Erro ao gravar. As edições não foram salvas na nuvem.");
+      alert("Erro ao gravar na nuvem.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleEdit = (tab, originalRowIndex, colIndex, newValue) => {
-    if (tab === 'ESTADO') {
-      const newData = [...estadoData];
-      newData[originalRowIndex + 1][colIndex] = newValue;
-      setEstadoData(newData);
-      updateSheet('ESTADO', originalRowIndex, colIndex, newValue);
-    } else {
-      const newData = [...capitalData];
-      newData[originalRowIndex + 1][colIndex] = newValue;
-      setCapitalData(newData);
-      updateSheet('CAPITAL', originalRowIndex, colIndex, newValue);
-    }
+    const isEstado = tab === 'ESTADO';
+    const data = isEstado ? estadoData : capitalData;
+    const setData = isEstado ? setEstadoData : setCapitalData;
+
+    const newData = [...data];
+    newData[originalRowIndex + 1][colIndex] = newValue;
+    setData(newData);
+    updateSheet(tab, originalRowIndex, colIndex, newValue);
+
     if (selectedItem && selectedItem.originalIndex === originalRowIndex) {
       const updatedRow = [...selectedItem.row];
       updatedRow[colIndex] = newValue;
@@ -138,7 +136,31 @@ export default function App() {
     }
   };
 
-  // --- Função auxiliar para gerar os Mapas de Calor (Treemaps) ---
+  const handleSort = (tab, index) => {
+    let direction = 'asc';
+    if (sortConfig[tab]?.key === index && sortConfig[tab].direction === 'asc') direction = 'desc';
+    setSortConfig(prev => ({ ...prev, [tab]: { key: index, direction } }));
+  };
+
+  const getSortedData = (data, tabName) => {
+    if (data.length <= 1) return { headers: [], rows: [] };
+    const headers = data[0];
+    let rows = data.slice(1).map((r, i) => ({ rowData: r, originalIndex: i }));
+    
+    const config = sortConfig[tabName];
+    if (config !== null) {
+      rows.sort((a, b) => {
+        let valA = parseSortValue(a.rowData[config.key]);
+        let valB = parseSortValue(b.rowData[config.key]);
+        if (valA < valB) return config.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return config.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return { headers, sortedRows: rows };
+  };
+
+  // --- RENDERIZADORES DE COMPONENTES ---
   const renderHeatmap = (title, dataArr, maxVal, headerBgColor, headerTextColor, subTitle) => (
     <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col h-full">
       <div className="p-4 border-b-4 border-black" style={{ backgroundColor: headerBgColor, color: headerTextColor }}>
@@ -168,9 +190,8 @@ export default function App() {
   const renderDashboard = () => {
     if (estadoData.length < 2 || capitalData.length < 2) return null;
     
-    // --- Processamento ESTADO ---
+    // Processamento Estado
     const estHeaders = estadoData[0].map(h => String(h).toLowerCase());
-    const idxEstCidade = estHeaders.findIndex(h => h === 'cidade');
     const idxEstRegiao = estHeaders.findIndex(h => h === 'região');
     const idxEstVotos = estHeaders.findIndex(h => h === '2022' || h === 'votos 2022');
     const idxEstEmenda23 = estHeaders.findIndex(h => h.includes('valor total de emendas 2023'));
@@ -182,26 +203,20 @@ export default function App() {
     const cidadesRelacao = [];
 
     estadoData.slice(1).forEach(row => {
-      const cidade = row[idxEstCidade];
       const regiao = row[idxEstRegiao] ? String(row[idxEstRegiao]).trim() : 'Outras';
       const votos = parseSortValue(row[idxEstVotos]);
       const emendas = parseSortValue(row[idxEstEmenda23]) + parseSortValue(row[idxEstEmenda24]) + parseSortValue(row[idxEstEmenda25]);
       
-      // Excluir Grande Florianópolis do gráfico de SC
       if (votos > 0 && regiao.toUpperCase() !== 'GRANDE FLORIANÓPOLIS') {
-        if (!regioesSC[regiao]) regioesSC[regiao] = 0;
-        regioesSC[regiao] += votos;
+        regioesSC[regiao] = (regioesSC[regiao] || 0) + votos;
         totalVotosSC += votos;
       }
-      if (votos > 0 || emendas > 0) {
-        cidadesRelacao.push({ cidade, votos, emendas });
-      }
+      if (votos > 0 || emendas > 0) cidadesRelacao.push({ cidade: row[0], votos, emendas });
     });
 
     const arrRegioesSC = Object.entries(regioesSC).sort((a, b) => b[1] - a[1]);
-    const maxVotosSC = arrRegioesSC.length > 0 ? arrRegioesSC[0][1] : 1;
+    const maxVotosSC = arrRegioesSC[0]?.[1] || 1;
     
-    // Construtor do Gráfico de Pizza para SC
     let anguloAtualSC = 0;
     const gradientStopsSC = arrRegioesSC.map(([reg, votos], idx) => {
       const perc = (votos / totalVotosSC) * 100;
@@ -211,7 +226,7 @@ export default function App() {
       return `${PIE_COLORS[idx % PIE_COLORS.length]} ${start}% ${end}%`;
     }).join(', ');
 
-    // --- Processamento CAPITAL ---
+    // Processamento Capital
     const capHeaders = capitalData[0].map(h => String(h).toLowerCase());
     const idxCapRegiao = capHeaders.findIndex(h => h === 'região');
     const idxCapDistrito = capHeaders.findIndex(h => h === 'distrito');
@@ -227,24 +242,17 @@ export default function App() {
       const votos = parseSortValue(row[idxCapVotos]);
       
       if (votos > 0) {
-        // Para Regiões Capital
-        if (!regioesFloripa[regiao]) regioesFloripa[regiao] = 0;
-        regioesFloripa[regiao] += votos;
-        // Para Distritos Capital
-        if (!distritosFloripa[distrito]) distritosFloripa[distrito] = 0;
-        distritosFloripa[distrito] += votos;
-        
+        regioesFloripa[regiao] = (regioesFloripa[regiao] || 0) + votos;
+        distritosFloripa[distrito] = (distritosFloripa[distrito] || 0) + votos;
         totalVotosCapital += votos;
       }
     });
 
     const arrRegioesFloripa = Object.entries(regioesFloripa).sort((a, b) => b[1] - a[1]);
     const arrDistritosFloripa = Object.entries(distritosFloripa).sort((a, b) => b[1] - a[1]);
-    
-    const maxVotosCapRegiao = arrRegioesFloripa.length > 0 ? arrRegioesFloripa[0][1] : 1;
-    const maxVotosCapDistrito = arrDistritosFloripa.length > 0 ? arrDistritosFloripa[0][1] : 1;
+    const maxVotosCapRegiao = arrRegioesFloripa[0]?.[1] || 1;
+    const maxVotosCapDistrito = arrDistritosFloripa[0]?.[1] || 1;
 
-    // Construtor do Gráfico de Pizza para Capital
     let anguloAtualCap = 0;
     const gradientStopsCap = arrRegioesFloripa.map(([reg, votos], idx) => {
       const perc = (votos / totalVotosCapital) * 100;
@@ -254,33 +262,25 @@ export default function App() {
       return `${PIE_COLORS[idx % PIE_COLORS.length]} ${start}% ${end}%`;
     }).join(', ');
 
-    // Ordenar cidades por emendas para o gráfico de correlação
-    cidadesRelacao.sort((a, b) => b.emendas - a.emendas);
-    const topCidadesEmendas = cidadesRelacao.filter(c => c.emendas > 0).slice(0, 10);
+    const topCidadesEmendas = cidadesRelacao.sort((a, b) => b.emendas - a.emendas).filter(c => c.emendas > 0).slice(0, 10);
 
     return (
       <div className="flex flex-col gap-12 animate-fade-in pb-12">
-        
-        {/* =========================================
-            SUBSEÇÃO: ESTADO
-        ========================================= */}
+        {/* SUBSEÇÃO ESTADO */}
         <div className="flex flex-col gap-6">
           <div className="bg-[#111] p-4 border-4 border-black shadow-[4px_4px_0px_0px_rgba(226,183,20,1)]">
             <h2 className="text-2xl font-black uppercase text-white tracking-widest">Panorama: Estado de SC</h2>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Pizza SC */}
             <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
               <div className="bg-[#111] text-white p-4 border-b-4 border-black">
                  <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Estado (SC)</h3>
                  <p className="text-[10px] text-gray-400 uppercase">*Exceto Grande Florianópolis</p>
               </div>
               <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
-                 <div 
-                   className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
-                   style={{ background: `conic-gradient(${gradientStopsSC})` }}
-                 ></div>
+                 <div className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
+                   style={{ background: `conic-gradient(${gradientStopsSC})` }}></div>
                  <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase overflow-y-auto max-h-[200px]">
                     {arrRegioesSC.map(([reg, votos], idx) => (
                       <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
@@ -294,47 +294,32 @@ export default function App() {
                  </div>
               </div>
             </div>
-
-            {/* Mapa de Calor: Regiões SC */}
             {renderHeatmap("Mapa de Calor: Regiões (SC)", arrRegioesSC, maxVotosSC, COLORS.black, COLORS.white, "*Exceto Grande Florianópolis")}
           </div>
 
-          {/* Correlação de ROI */}
           <div className="border-4 border-black bg-white p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
             <div className="mb-6 border-b-4 border-black pb-4">
               <h3 className="font-black text-2xl uppercase tracking-tighter">Correlação: Investimento x Votos</h3>
               <p className="text-xs md:text-sm font-bold text-gray-500 uppercase mt-2">
-                Compara a proporção de <span className="text-[#008080]">verba de emendas enviada (R$)</span> com a proporção de <span className="text-[#c32148]">votos obtidos</span> nos 10 municípios com maiores aportes. Permite visualizar o ROI (Retorno) Político.
+                Compara a proporção de <span className="text-[#008080]">verba de emendas enviada (R$)</span> com a proporção de <span className="text-[#c32148]">votos obtidos</span> nos 10 municípios com maiores aportes. Permite visualizar o ROI Político.
               </p>
             </div>
-            
             <div className="flex flex-col gap-6">
               {topCidadesEmendas.map((item, idx) => {
-                const maxEmenda = topCidadesEmendas[0].emendas;
-                const maxVotosT = Math.max(...topCidadesEmendas.map(c => c.votos));
-                
-                const percEmenda = Math.max((item.emendas / maxEmenda) * 100, 2);
-                const percVotos = Math.max((item.votos / maxVotosT) * 100, 2);
+                const percEmenda = Math.max((item.emendas / topCidadesEmendas[0].emendas) * 100, 2);
+                const percVotos = Math.max((item.votos / Math.max(...topCidadesEmendas.map(c => c.votos))) * 100, 2);
 
                 return (
                   <div key={item.cidade} className="flex flex-col font-bold uppercase text-xs sm:text-sm">
                     <div className="mb-2 truncate text-black">{idx + 1}. {item.cidade}</div>
-                    
-                    {/* Barra Emendas */}
                     <div className="flex items-center gap-4 mb-1">
-                      <div className="w-24 sm:w-32 shrink-0 text-[#008080] truncate" title={formatCurrency(item.emendas)}>
-                        {formatCurrency(item.emendas)}
-                      </div>
+                      <div className="w-24 sm:w-32 shrink-0 text-[#008080] truncate">{formatCurrency(item.emendas)}</div>
                       <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
                         <div className="h-full bg-[#008080]" style={{ width: `${percEmenda}%` }}></div>
                       </div>
                     </div>
-                    
-                    {/* Barra Votos */}
                     <div className="flex items-center gap-4">
-                      <div className="w-24 sm:w-32 shrink-0 text-[#c32148]">
-                        {item.votos.toLocaleString('pt-BR')} V
-                      </div>
+                      <div className="w-24 sm:w-32 shrink-0 text-[#c32148]">{item.votos.toLocaleString('pt-BR')} V</div>
                       <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
                         <div className="h-full bg-[#c32148]" style={{ width: `${percVotos}%` }}></div>
                       </div>
@@ -346,26 +331,21 @@ export default function App() {
           </div>
         </div>
 
-        {/* =========================================
-            SUBSEÇÃO: CAPITAL
-        ========================================= */}
+        {/* SUBSEÇÃO CAPITAL */}
         <div className="flex flex-col gap-6 mt-6">
           <div className="bg-[#008080] p-4 border-4 border-black shadow-[4px_4px_0px_0px_rgba(195,33,72,1)]">
             <h2 className="text-2xl font-black uppercase text-white tracking-widest">Panorama: Capital (Florianópolis)</h2>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Pizza CAPITAL */}
             <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
               <div className="bg-[#e2b714] text-black p-4 border-b-4 border-black">
                  <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Capital</h3>
                  <p className="text-[10px] uppercase font-bold text-gray-700">Volume de votos por região</p>
               </div>
               <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
-                 <div 
-                   className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
-                   style={{ background: `conic-gradient(${gradientStopsCap})` }}
-                 ></div>
+                 <div className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
+                   style={{ background: `conic-gradient(${gradientStopsCap})` }}></div>
                  <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase overflow-y-auto max-h-[200px]">
                     {arrRegioesFloripa.map(([reg, votos], idx) => (
                       <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
@@ -379,56 +359,14 @@ export default function App() {
                  </div>
               </div>
             </div>
-
-            {/* Mapa de Calor: Regiões Capital */}
             {renderHeatmap("Mapa de Calor: Regiões (Capital)", arrRegioesFloripa, maxVotosCapRegiao, COLORS.mustard, COLORS.black, "Volume de votos mapeados")}
           </div>
-
-          {/* Mapa de Calor: Distritos Capital */}
           <div className="grid grid-cols-1 gap-8">
             {renderHeatmap("Mapa de Calor: Distritos (Capital)", arrDistritosFloripa, maxVotosCapDistrito, COLORS.crimson, COLORS.white, "Comparativo por distrito")}
           </div>
         </div>
-
       </div>
     );
-  };
-
-  const handleSort = (tab, index) => {
-    let direction = 'asc';
-    const currentSort = sortConfig[tab];
-    if (currentSort && currentSort.key === index && currentSort.direction === 'asc') direction = 'desc';
-    setSortConfig(prev => ({ ...prev, [tab]: { key: index, direction } }));
-  };
-
-  const getSortedData = (data, tabName) => {
-    if (data.length <= 1) return { headers: [], rows: [] };
-    const headers = data[0];
-    let rows = data.slice(1).map((r, i) => ({ rowData: r, originalIndex: i }));
-    
-    const config = sortConfig[tabName];
-    if (config !== null) {
-      rows.sort((a, b) => {
-        let valA = parseSortValue(a.rowData[config.key]);
-        let valB = parseSortValue(b.rowData[config.key]);
-        if (valA < valB) return config.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return config.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return { headers, sortedRows: rows };
-  };
-
-  const getShortHeader = (headerString) => {
-    const s = String(headerString).toUpperCase();
-    if (s.includes('DIÁRIAS')) return 'DIÁRIAS';
-    if (s.includes('EQUIPE')) return 'ARTICULADOR';
-    if (s.includes('VALOR TOTAL DE EMENDAS')) return s.replace('VALOR TOTAL DE EMENDAS', 'EMENDAS').trim();
-    if (s.includes('% DOS VOTOS')) return '% VOTOS';
-    if (s.includes('DIRETÓRIO')) return 'DIRETÓRIO';
-    if (s.includes('CÍRCULOS TERRITORIAIS')) return 'STATUS (CÍRCULOS)';
-    if (s.includes('BAIRRO REPLAN')) return 'BAIRRO';
-    return s;
   };
 
   const renderDataView = (tabName, dataObj) => {
@@ -436,9 +374,10 @@ export default function App() {
     if (headers.length === 0) return null;
 
     const safeHeaders = headers.map(h => String(h).toLowerCase());
-    const findIndex = (strMatch) => safeHeaders.findIndex(h => h === strMatch || h.includes(strMatch.toLowerCase()));
+    const findIndex = (str) => safeHeaders.findIndex(h => h === str || h.includes(str));
     
-    const indices = tabName === 'ESTADO' ? {
+    const isEstado = tabName === 'ESTADO';
+    const indices = isEstado ? {
       title: findIndex('cidade'), subtitle: findIndex('região'),
       votos22: findIndex('2022') > -1 ? findIndex('2022') : findIndex('votos 2022'),
       editField1: findIndex('círculos territoriais')
@@ -450,8 +389,8 @@ export default function App() {
 
     const SortIcon = ({ idx }) => {
       const conf = sortConfig[tabName];
-      if (conf?.key !== idx) return <span className="text-gray-500 opacity-30 text-[10px] ml-1">↕</span>;
-      return <span className="text-[#e2b714] text-xs ml-1 font-black">{conf.direction === 'asc' ? '↑' : '↓'}</span>;
+      return conf?.key !== idx ? <span className="text-gray-500 opacity-30 text-[10px] ml-1">↕</span> : 
+             <span className="text-[#e2b714] text-xs ml-1 font-black">{conf.direction === 'asc' ? '↑' : '↓'}</span>;
     };
 
     if (viewMode === 'cards') {
@@ -459,16 +398,13 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-fade-in">
           {sortedRows.map((item, i) => {
             const row = item.rowData;
-            const mainTitle = row[indices.title];
-            if (!mainTitle || !String(mainTitle).trim()) return null;
+            if (!row[indices.title]?.trim()) return null;
 
             return (
               <div key={i} className="border-4 border-black bg-white flex flex-col shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-                <div 
-                  className="p-4 border-b-4 border-black cursor-pointer group bg-[#111] text-white" 
-                  onClick={() => setSelectedItem({ tab: tabName, headers, row, originalIndex: item.originalIndex })}
-                >
-                  <h3 className="font-black text-lg uppercase truncate group-hover:text-[#e2b714] transition-colors">{mainTitle}</h3>
+                <div className="p-4 border-b-4 border-black cursor-pointer group bg-[#111] text-white" 
+                     onClick={() => setSelectedItem({ tab: tabName, headers, row, originalIndex: item.originalIndex })}>
+                  <h3 className="font-black text-lg uppercase truncate group-hover:text-[#e2b714] transition-colors">{row[indices.title]}</h3>
                   <p className="text-xs font-bold text-gray-400 uppercase truncate mt-1">{row[indices.subtitle]}</p>
                 </div>
                 
@@ -479,35 +415,29 @@ export default function App() {
                   </div>
 
                   <div className="mt-auto pt-2 space-y-3">
-                    {tabName === 'ESTADO' && indices.editField1 > -1 && (
+                    {isEstado && indices.editField1 > -1 && (
                       <div>
                         <label className="text-[10px] uppercase font-black text-[#008080] tracking-wider mb-1 block">Status (Círculos)</label>
-                        <select 
-                          className="w-full bg-yellow-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-yellow-100"
-                          value={row[indices.editField1] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField1, e.target.value)}
-                        >
+                        <select className="w-full bg-yellow-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-yellow-100"
+                          value={row[indices.editField1] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField1, e.target.value)}>
                           {ESTADO_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || "-- Selecione --"}</option>)}
                         </select>
                       </div>
                     )}
-                    {tabName === 'CAPITAL' && (
+                    {!isEstado && (
                       <>
                         {indices.editField1 > -1 && (
                           <div>
                             <label className="text-[10px] uppercase font-black text-[#c32148] tracking-wider mb-1 block">Articulador</label>
-                            <input 
-                              type="text" className="w-full bg-red-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-red-100"
-                              value={row[indices.editField1] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField1, e.target.value)}
-                            />
+                            <input type="text" className="w-full bg-red-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-red-100"
+                              value={row[indices.editField1] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField1, e.target.value)} />
                           </div>
                         )}
                         {indices.editField2 > -1 && (
                           <div>
                             <label className="text-[10px] uppercase font-black text-[#c32148] tracking-wider mb-1 block">Estratégia</label>
-                            <select 
-                              className="w-full bg-red-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-red-100"
-                              value={row[indices.editField2] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField2, e.target.value)}
-                            >
+                            <select className="w-full bg-red-50 border-2 border-black p-2 font-bold outline-none text-xs focus:bg-red-100"
+                              value={row[indices.editField2] || ''} onChange={(e) => handleEdit(tabName, item.originalIndex, indices.editField2, e.target.value)}>
                               {CAPITAL_ESTRATEGIA_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || "-- Selecione --"}</option>)}
                             </select>
                           </div>
@@ -537,21 +467,19 @@ export default function App() {
                 {headers.map((h, i) => {
                   const shortH = getShortHeader(h);
                   let bgColor = '#111111';
-                  let tColor = 'white';
-                  
                   let widthClass = 'w-20'; 
+                  
                   if (i === indices.title || i === indices.subtitle) widthClass = 'min-w-[140px] max-w-[220px]';
                   else if (shortH === 'SEÇÃO') widthClass = 'w-16 max-w-[80px]';
                   else if (i === indices.editField1 || i === indices.editField2) widthClass = 'min-w-[120px]';
 
-                  if (tabName === 'ESTADO' && i === indices.editField1) { bgColor = COLORS.mustard; tColor = 'black'; }
-                  if (tabName === 'CAPITAL' && (i === indices.editField1 || i === indices.editField2)) { bgColor = COLORS.crimson; }
+                  if (isEstado && i === indices.editField1) bgColor = COLORS.mustard;
+                  if (!isEstado && (i === indices.editField1 || i === indices.editField2)) bgColor = COLORS.crimson;
 
                   return (
-                    <th key={i} 
+                    <th key={i} onClick={() => handleSort(tabName, i)}
                       className={`p-2 border-r-2 border-b-4 border-black cursor-pointer hover:bg-gray-800 transition-colors align-bottom break-words leading-tight ${widthClass} ${i === indices.title ? 'sticky left-0 z-30 shadow-[2px_0_0_#000]' : ''}`}
-                      style={{ backgroundColor: bgColor, color: tColor }}
-                      onClick={() => handleSort(tabName, i)}
+                      style={{ backgroundColor: bgColor, color: bgColor !== '#111111' ? 'black' : 'white' }}
                     >
                       <div className="flex items-end justify-between gap-1">
                         <span>{shortH}</span>
@@ -570,17 +498,11 @@ export default function App() {
                 return (
                   <tr key={i} className="border-b-2 border-gray-300 hover:bg-gray-100 transition-colors group">
                     {row.map((cell, colIdx) => {
-                      const isTitle = colIdx === indices.title;
                       const hStr = String(headers[colIdx]).toUpperCase();
-                      const isLOA = hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA');
-                      const isPerc = hStr.includes('%') || hStr.includes('ROI');
-                      const isSecao = hStr === 'SEÇÃO';
-                      
-                      let content = cell;
-                      if (isLOA) content = formatCurrency(cell);
-                      else if (isPerc) content = formatPercentage(cell);
+                      const content = (hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA')) ? formatCurrency(cell) : 
+                                      (hStr.includes('%') || hStr.includes('ROI')) ? formatPercentage(cell) : cell;
 
-                      if (isSecao) {
+                      if (hStr === 'SEÇÃO') {
                         return (
                           <td key={colIdx} className="p-2 border-r-2 border-black align-top font-bold text-[10px]">
                             <div className="relative group/tooltip">
@@ -595,7 +517,7 @@ export default function App() {
                         );
                       }
 
-                      if (tabName === 'ESTADO' && colIdx === indices.editField1) {
+                      if (isEstado && colIdx === indices.editField1) {
                         return (
                           <td key={colIdx} className="p-0 border-r-2 border-black bg-yellow-50 align-top">
                             <select className="w-full h-full min-h-[40px] p-2 bg-transparent font-bold text-[10px] uppercase outline-none focus:bg-yellow-200"
@@ -605,7 +527,7 @@ export default function App() {
                           </td>
                         );
                       }
-                      if (tabName === 'CAPITAL') {
+                      if (!isEstado) {
                         if (colIdx === indices.editField1) return (
                            <td key={colIdx} className="p-0 border-r-2 border-black bg-red-50 align-top">
                              <input type="text" className="w-full h-full min-h-[40px] p-2 bg-transparent font-bold text-[10px] uppercase outline-none focus:bg-red-100"
@@ -623,10 +545,8 @@ export default function App() {
                       }
 
                       return (
-                        <td 
-                          key={colIdx} 
-                          className={`p-2 border-r-2 border-black align-top whitespace-normal break-words ${isTitle ? 'sticky left-0 bg-white font-black cursor-pointer group-hover:bg-gray-200 group-hover:text-[#c32148] z-10 shadow-[2px_0_0_#000]' : ''}`}
-                          onClick={isTitle ? () => setSelectedItem({ tab: tabName, headers, row, originalIndex: item.originalIndex }) : undefined}
+                        <td key={colIdx} onClick={colIdx === indices.title ? () => setSelectedItem({ tab: tabName, headers, row, originalIndex: item.originalIndex }) : undefined}
+                          className={`p-2 border-r-2 border-black align-top whitespace-normal break-words ${colIdx === indices.title ? 'sticky left-0 bg-white font-black cursor-pointer group-hover:bg-gray-200 group-hover:text-[#c32148] z-10 shadow-[2px_0_0_#000]' : ''}`}
                         >
                           {content}
                         </td>
@@ -649,7 +569,6 @@ export default function App() {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 animate-fade-in backdrop-blur-sm">
         <div className="bg-white border-8 border-black w-full max-w-4xl flex flex-col shadow-[12px_12px_0px_0px_rgba(226,183,20,1)] max-h-[90vh]">
-          
           <div className="flex border-b-4 border-black shrink-0">
              <div className="w-4 bg-[#c32148] border-r-4 border-black"></div>
              <div className="flex-1 p-4 bg-[#111] text-white flex justify-between items-center">
@@ -657,30 +576,27 @@ export default function App() {
                 <button onClick={() => setSelectedItem(null)} className="font-black text-2xl hover:text-[#e2b714] px-2">X</button>
              </div>
           </div>
-          
           <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 overflow-y-auto">
              {headers.map((h, i) => {
                const val = row[i];
                const hStr = String(h).toUpperCase();
-               const isLOA = hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA');
-               const isPerc = hStr.includes('%') || hStr.includes('ROI');
-               
-               let displayVal = val || '-';
-               if (isLOA) displayVal = formatCurrency(val);
-               else if (isPerc) displayVal = formatPercentage(val);
+               const displayVal = (hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA')) ? formatCurrency(val) : 
+                                  (hStr.includes('%') || hStr.includes('ROI')) ? formatPercentage(val) : (val || '-');
                
                const safeH = String(h).toLowerCase();
                const isStatus = tab === 'ESTADO' && safeH.includes('círculos');
                const isArticulador = tab === 'CAPITAL' && safeH.includes('equipe');
                const isEstrategia = tab === 'CAPITAL' && safeH.includes('estratégia');
 
-               if (isStatus) {
+               if (isStatus || isEstrategia) {
+                 const options = isStatus ? ESTADO_STATUS_OPTIONS : CAPITAL_ESTRATEGIA_OPTIONS;
+                 const color = isStatus ? 'yellow' : 'red';
                  return (
                     <div key={i} className="flex flex-col border-b-2 border-black pb-2 col-span-1 md:col-span-2">
-                      <span className="text-xs font-black uppercase text-[#008080] mb-1">{h}</span>
-                      <select className="bg-yellow-100 border-2 border-black p-2 font-bold outline-none"
+                      <span className={`text-xs font-black uppercase mb-1 ${isStatus ? 'text-[#008080]' : 'text-[#c32148]'}`}>{h}</span>
+                      <select className={`bg-${color}-100 border-2 border-black p-2 font-bold outline-none`}
                         value={val || ''} onChange={(e) => handleEdit(tab, originalIndex, i, e.target.value)}>
-                        {ESTADO_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                       </select>
                     </div>
                  );
@@ -691,17 +607,6 @@ export default function App() {
                       <span className="text-xs font-black uppercase text-[#c32148] mb-1">{h}</span>
                       <input type="text" className="bg-red-100 border-2 border-black p-2 font-bold outline-none"
                         value={val || ''} onChange={(e) => handleEdit(tab, originalIndex, i, e.target.value)} />
-                    </div>
-                 );
-               }
-               if (isEstrategia) {
-                 return (
-                    <div key={i} className="flex flex-col border-b-2 border-black pb-2 col-span-1 md:col-span-2">
-                      <span className="text-xs font-black uppercase text-[#c32148] mb-1">{h}</span>
-                      <select className="bg-red-100 border-2 border-black p-2 font-bold outline-none"
-                        value={val || ''} onChange={(e) => handleEdit(tab, originalIndex, i, e.target.value)}>
-                        {CAPITAL_ESTRATEGIA_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
                     </div>
                  );
                }
@@ -723,9 +628,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f4f4f4] font-sans text-black selection:bg-[#e2b714] selection:text-black flex flex-col">
       <header className="border-b-4 border-black bg-white flex flex-col md:flex-row shadow-md relative z-30 shrink-0">
         <div className="flex-1 p-4 md:p-6 flex items-center gap-4 border-b-4 md:border-b-0 md:border-r-4 border-black">
-          <div className="w-10 h-10 md:w-12 md:h-12 border-4 border-black bg-[#c32148] shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center text-xl">
-             📊
-          </div>
+          <div className="w-10 h-10 md:w-12 md:h-12 border-4 border-black bg-[#c32148] shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center text-xl">📊</div>
           <div className="overflow-hidden">
             <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tighter leading-none truncate">Tabulum</h1>
             <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-gray-600 mt-1 truncate">App de Gestão e Análise • 2026</p>
@@ -739,31 +642,21 @@ export default function App() {
       </header>
 
       <div className="flex flex-col sm:flex-row border-b-4 border-black bg-white sticky top-0 z-20 shrink-0">
-        <button onClick={() => setActiveTab('DASHBOARD')}
-          className={`flex-1 p-3 font-black text-sm md:text-lg uppercase tracking-wider border-b-4 sm:border-b-0 sm:border-r-4 border-black transition-colors ${activeTab === 'DASHBOARD' ? 'bg-[#c32148] text-white shadow-[inset_0_-4px_0_0_#000]' : 'bg-white hover:bg-gray-100 text-gray-500'}`}
-        > Dashboard </button>
-        <button onClick={() => setActiveTab('ESTADO')}
-          className={`flex-1 p-3 font-black text-sm md:text-lg uppercase tracking-wider border-b-4 sm:border-b-0 sm:border-r-4 border-black transition-colors ${activeTab === 'ESTADO' ? 'bg-[#e2b714] text-black shadow-[inset_0_-4px_0_0_#000]' : 'bg-white hover:bg-gray-100 text-gray-500'}`}
-        > Estado </button>
-        <button onClick={() => setActiveTab('CAPITAL')}
-          className={`flex-1 p-3 font-black text-sm md:text-lg uppercase tracking-wider transition-colors ${activeTab === 'CAPITAL' ? 'bg-[#008080] text-white shadow-[inset_0_-4px_0_0_#000]' : 'bg-white hover:bg-gray-100 text-gray-500'}`}
-        > Capital </button>
+        {['DASHBOARD', 'ESTADO', 'CAPITAL'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`flex-1 p-3 font-black text-sm md:text-lg uppercase tracking-wider border-b-4 sm:border-b-0 sm:border-r-4 border-black transition-colors ${activeTab === tab ? (tab === 'DASHBOARD' ? 'bg-[#c32148] text-white' : tab === 'ESTADO' ? 'bg-[#e2b714] text-black' : 'bg-[#008080] text-white') + ' shadow-[inset_0_-4px_0_0_#000]' : 'bg-white hover:bg-gray-100 text-gray-500'}`}
+          > {tab} </button>
+        ))}
       </div>
 
       <main className="p-4 md:p-6 flex-1 w-full max-w-[1800px] mx-auto flex flex-col">
-        {error && (
-          <div className="mb-4 border-4 border-black bg-[#c32148] text-white p-4 font-bold flex items-center gap-3 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-            ⚠️ <span className="text-sm">{error}</span>
-          </div>
-        )}
+        {error && <div className="mb-4 border-4 border-black bg-[#c32148] text-white p-4 font-bold flex items-center gap-3 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">⚠️ <span className="text-sm">{error}</span></div>}
 
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4 shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight flex items-center gap-2">
-              <span className="w-3 h-3 md:w-4 md:h-4 shrink-0 inline-block border-2 border-black bg-[#111]"></span>
-              {activeTab}
+              <span className="w-3 h-3 md:w-4 md:h-4 shrink-0 inline-block border-2 border-black bg-[#111]"></span> {activeTab}
             </h2>
-            
             {activeTab !== 'DASHBOARD' && (
               <div className="flex bg-white border-4 border-black text-xs font-bold shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                 <button onClick={() => setViewMode('table')} className={`px-4 py-2 uppercase ${viewMode==='table' ? 'bg-black text-white' : 'hover:bg-gray-200'}`}>Lista</button>
@@ -771,21 +664,10 @@ export default function App() {
               </div>
             )}
           </div>
-          
           <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto">
-             <button onClick={fetchSheets} className="flex-1 lg:flex-none text-xs bg-white text-black border-4 border-black font-black px-4 py-2 uppercase tracking-widest hover:bg-gray-200 transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none whitespace-nowrap">
-              🔄 Sincronizar
-            </button>
-            {saving && (
-              <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#e2b714] text-black px-3 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap">
-                ⏳ Salvando...
-              </div>
-            )}
-            {!saving && lastSaved && (
-              <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#008080] text-white px-3 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap">
-                ✅ Salvo
-              </div>
-            )}
+             <button onClick={fetchSheets} className="flex-1 lg:flex-none text-xs bg-white text-black border-4 border-black font-black px-4 py-2 uppercase tracking-widest hover:bg-gray-200 transition-colors shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none whitespace-nowrap">🔄 Sincronizar</button>
+            {saving && <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#e2b714] text-black px-3 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap">⏳ Salvando...</div>}
+            {!saving && lastSaved && <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#008080] text-white px-3 py-2 border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] whitespace-nowrap">✅ Salvo</div>}
           </div>
         </div>
 
@@ -802,7 +684,6 @@ export default function App() {
           </div>
         )}
       </main>
-      
       {renderModal()}
     </div>
   );

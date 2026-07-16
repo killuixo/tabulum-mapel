@@ -33,6 +33,8 @@ const CAPITAL_ESTRATEGIA_OPTIONS = [
 ];
 
 // --- CONFIGURAÇÃO DA API (GOOGLE APPS SCRIPT) ---
+// Em Vite, as variáveis DEVEM começar com VITE_ e são injetadas no momento do Build.
+// Adicionado fallback para process.env caso a Vercel force um ambiente Node clássico no build.
 const getScriptUrl = () => {
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) {
@@ -42,7 +44,7 @@ const getScriptUrl = () => {
       return process.env.VITE_SCRIPT_URL;
     }
   } catch (e) {
-    console.warn("Aviso: Variáveis de ambiente não detectadas.");
+    console.warn("Aviso: Variáveis de ambiente não detetadas.");
   }
   return ""; 
 };
@@ -66,25 +68,25 @@ export default function App() {
     setError(null);
 
     if (!SCRIPT_URL) {
-      setError("API não configurada: Adicione VITE_SCRIPT_URL nas variáveis de ambiente da Vercel.");
+      setError("API não configurada. Se já adicionou VITE_SCRIPT_URL na Vercel, vá à aba 'Deployments' e faça um REDEPLOY para aplicar a alteração.");
       setLoading(false);
       return;
     }
 
     try {
       const response = await fetch(SCRIPT_URL);
-      if (!response.ok) throw new Error("Não foi possível acessar a planilha.");
+      if (!response.ok) throw new Error("Não foi possível aceder à folha de cálculo.");
       const data = await response.json();
       
       if (data.estado && data.capital) {
         setEstadoData(data.estado);
         setCapitalData(data.capital);
       } else {
-         throw new Error("Formato de dados inválido.");
+         throw new Error("Formato de dados inválido. Verifique o Google Apps Script.");
       }
     } catch (err) {
-      console.error("Erro ao buscar dados:", err);
-      setError("Erro de conexão com a planilha. Verifique o link do Apps Script.");
+      console.error("Erro ao procurar dados:", err);
+      setError("Erro de ligação à folha de cálculo. Verifique o URL e a política de partilha (CORS).");
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ export default function App() {
 
   useEffect(() => {
     fetchSheets();
-  }, []); // Roda apenas uma vez ao abrir o app
+  }, []); // Executa apenas uma vez ao abrir a aplicação
 
   // 2. Gravar Edição na Planilha (POST)
   const updateSheet = async (sheetName, rowIdx, colIdx, value) => {
@@ -108,19 +110,22 @@ export default function App() {
 
       await fetch(SCRIPT_URL, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
         body: JSON.stringify(payload)
       });
       
       setLastSaved(new Date());
     } catch (err) {
-      console.error("Erro ao salvar:", err);
-      alert("Houve um erro de rede ao tentar salvar a informação na planilha.");
+      console.error("Erro ao gravar:", err);
+      alert("Houve um erro de rede ao tentar gravar a informação na folha de cálculo.");
     } finally {
       setSaving(false);
     }
   };
 
-  // --- HANDLERS DE EDIÇÃO (Otimistas - Atualizam a tela na hora e mandam pro Google) ---
+  // --- HANDLERS DE EDIÇÃO (Otimistas - Atualizam o ecrã na hora e enviam para o Google) ---
   const handleEstadoEdit = (rowIndex, colIndex, newValue) => {
     const newData = [...estadoData];
     newData[rowIndex + 1][colIndex] = newValue;
@@ -185,7 +190,7 @@ export default function App() {
               <th className="p-2 border-r-2 border-black">% 2022</th>
               <th className="p-2 border-r-2 border-black">PSOL</th>
               <th className="p-2 border-r-2 border-black">Leads</th>
-              <th className="p-2 border-r-2 border-black">Equipe</th>
+              <th className="p-2 border-r-2 border-black">Equipa</th>
               <th className="p-2 border-r-2 border-black">Diretório</th>
               <th className="p-2 border-r-2 border-black">Diárias</th>
               <th className="p-2 border-r-2 border-black">Lideranças</th>

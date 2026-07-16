@@ -5,7 +5,6 @@ import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/fire
 import { AlertCircle, Loader2, Save, FileSpreadsheet } from 'lucide-react';
 
 // --- CONFIGURAÇÃO FIREBASE ---
-// Utilizando credenciais de ambiente injetadas no ecossistema
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -44,38 +43,18 @@ const CAPITAL_ESTRATEGIA_OPTIONS = [
   "Observação"
 ];
 
-// --- FUNÇÃO PARA PARSE DE CSV (Lida com vírgulas dentro de aspas) ---
-const parseCSV = (text) => {
-  const result = [];
-  let row = [];
-  let currentVal = '';
-  let inQuotes = false;
+// --- CONFIGURAÇÃO DA API (GOOGLE APPS SCRIPT) ---
+let envScriptUrl = null;
+try {
+  if (typeof process !== 'undefined' && process.env) {
+    envScriptUrl = process.env.REACT_APP_SCRIPT_URL || process.env.VITE_SCRIPT_URL;
+  }
+} catch (e) {
+  // Ignora erros de ambiente restrito
+}
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"' && text[i + 1] === '"') {
-      currentVal += '"';
-      i++;
-    } else if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      row.push(currentVal.trim());
-      currentVal = '';
-    } else if (char === '\n' && !inQuotes) {
-      row.push(currentVal.trim());
-      result.push(row);
-      row = [];
-      currentVal = '';
-    } else if (char !== '\r') {
-      currentVal += char;
-    }
-  }
-  if (currentVal || text[text.length - 1] === ',') {
-    row.push(currentVal.trim());
-  }
-  if (row.length > 0) result.push(row);
-  return result;
-};
+// SUBSTITUA "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI" PELA SUA URL DE VERDADE SE NÃO QUISER USAR VARIÁVEIS DE AMBIENTE
+const SCRIPT_URL = envScriptUrl || "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI"; 
 
 // --- COMPONENTE PRINCIPAL ---
 export default function App() {
@@ -90,7 +69,7 @@ export default function App() {
   const [estadoOverrides, setEstadoOverrides] = useState({});
   const [capitalOverrides, setCapitalOverrides] = useState({});
 
-  // 1. Autenticação Firebase
+  // 1. Autenticação Firebase (Garante Edições Universais)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -101,7 +80,7 @@ export default function App() {
         }
       } catch (err) {
         console.error("Erro na autenticação:", err);
-        setError("Falha ao conectar com o servidor de dados.");
+        setError("Falha ao conectar com o servidor de sincronização em tempo real.");
       }
     };
     initAuth();
@@ -109,32 +88,38 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Buscar Dados da Planilha do Google
+  // 2. Buscar Dados Seguros do Google Apps Script
   useEffect(() => {
     const fetchSheets = async () => {
       setLoading(true);
-      const sheetId = '1qaQJqzgaFXdBJTp9Y39Y8obayv2031qf6WOQE4UzN2A';
-      const estadoUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=ESTADO`;
-      const capitalUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=CAPITAL`;
+      setError(null);
+
+      // Verificação de segurança caso a URL não tenha sido preenchida
+      if (!SCRIPT_URL || SCRIPT_URL === "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI") {
+        setError("API não configurada: Adicione a URL do Google Apps Script nas Variáveis de Ambiente do Vercel ou no código fonte.");
+        setLoading(false);
+        return;
+      }
 
       try {
-        const [estadoRes, capitalRes] = await Promise.all([
-          fetch(estadoUrl),
-          fetch(capitalUrl)
-        ]);
+        const response = await fetch(SCRIPT_URL);
+        
+        if (!response.ok) {
+          throw new Error("Não foi possível acessar os dados. O Apps Script pode não estar público.");
+        }
 
-        if (!estadoRes.ok || !capitalRes.ok) throw new Error("Erro ao ler planilhas. Verifique se estão públicas.");
+        const data = await response.json();
+        
+        if (data.estado && data.capital) {
+          setEstadoData(data.estado);
+          setCapitalData(data.capital);
+        } else {
+           throw new Error("Formato de dados inválido recebido do Apps Script.");
+        }
 
-        const estadoCsv = await estadoRes.text();
-        const capitalCsv = await capitalRes.text();
-
-        setEstadoData(parseCSV(estadoCsv));
-        setCapitalData(parseCSV(capitalCsv));
-        setError(null);
       } catch (err) {
         console.error("Erro ao buscar dados:", err);
-        // Fallback para demonstrar caso a planilha bloqueie CORS temporariamente
-        setError("Não foi possível carregar a planilha ao vivo. Verifique o compartilhamento ou acesse via proxy.");
+        setError("Erro de conexão com a API da planilha segura. Verifique se o link do Apps Script está correto.");
       } finally {
         setLoading(false);
       }
@@ -143,7 +128,7 @@ export default function App() {
     fetchSheets();
   }, []);
 
-  // 3. Ouvir Edições do Firebase (Overrides)
+  // 3. Ouvir Edições do Firebase (Overrides Universais)
   useEffect(() => {
     if (!user) return;
 
@@ -169,7 +154,7 @@ export default function App() {
     };
   }, [user]);
 
-  // --- HANDLERS DE EDIÇÃO ---
+  // --- HANDLERS DE EDIÇÃO (Salvam na nuvem para todos) ---
   const handleEstadoEdit = async (cidadeId, newValue) => {
     if (!user) return;
     try {
@@ -196,36 +181,37 @@ export default function App() {
     const headers = estadoData[0];
     const rows = estadoData.slice(1);
 
-    // Mapeamento dinâmico de índices baseado nos nomes dos cabeçalhos reais da planilha
-    const findIndex = (strMatch) => headers.findIndex(h => h.toLowerCase().includes(strMatch.toLowerCase()));
+    // Converte todos os cabeçalhos para string para garantir busca sem erros
+    const safeHeaders = headers.map(h => String(h).toLowerCase());
+    const findIndex = (strMatch) => safeHeaders.findIndex(h => h.includes(strMatch.toLowerCase()));
     
     const indices = {
-      cidade: findIndex('Cidade'), // A
-      regiao: findIndex('Região'), // B
+      cidade: findIndex('cidade'), // A
+      regiao: findIndex('região'), // B
       votos2018: findIndex('2018'), // C
       votos2022: findIndex('2022'), // D
       percVotos: findIndex('% dos votos'), // E
-      chapaPsol: findIndex('Chapa PSOL'), // F
-      leads: findIndex('Leads'), // G
-      equipe: findIndex('Equipe do mandato'), // H
-      diretorio: findIndex('Diretório'), // I
-      diarias: findIndex('Diárias'), // J
-      liderancasMilo: findIndex('Lideranças (Milo)'), // K
-      loa2023: findIndex('LOA 2023'), // M
-      loa2024: findIndex('LOA 2024'), // O
-      valor2023: findIndex('Valor total de emendas 2023'), // L
-      valor2024: findIndex('Valor total de emendas 2024'), // N
-      valor2025: findIndex('Valor total de emendas 2025'), // P
-      loa2025: findIndex('LOA 2025'), // Q
-      circulos: findIndex('Círculos territoriais'), // U
+      chapaPsol: findIndex('chapa psol'), // F
+      leads: findIndex('leads'), // G
+      equipe: findIndex('equipe do mandato'), // H
+      diretorio: findIndex('diretório'), // I
+      diarias: findIndex('diárias'), // J
+      liderancasMilo: findIndex('lideranças (milo)'), // K
+      loa2023: findIndex('loa 2023'), // M
+      loa2024: findIndex('loa 2024'), // O
+      valor2023: findIndex('valor total de emendas 2023'), // L
+      valor2024: findIndex('valor total de emendas 2024'), // N
+      valor2025: findIndex('valor total de emendas 2025'), // P
+      loa2025: findIndex('loa 2025'), // Q
+      circulos: findIndex('círculos territoriais'), // U
     };
 
     return (
       <div className="overflow-x-auto border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-        <table className="w-full text-sm text-left font-medium">
+        <table className="w-full text-sm text-left font-medium whitespace-nowrap">
           <thead className="bg-[#111111] text-white uppercase text-xs">
             <tr>
-              <th className="p-3 border-r-2 border-b-4 border-black sticky left-0 bg-[#111111] z-10 w-48">Cidade</th>
+              <th className="p-3 border-r-2 border-b-4 border-black sticky left-0 bg-[#111111] z-10 min-w-[200px]">Cidade</th>
               <th className="p-3 border-r-2 border-b-4 border-black">Região</th>
               <th className="p-3 border-r-2 border-b-4 border-black text-center" colSpan="8" style={{backgroundColor: COLORS.teal}}>Votos / Recebidos</th>
               <th className="p-3 border-r-2 border-b-4 border-black text-center" colSpan="3" style={{backgroundColor: COLORS.mustard, color: COLORS.black}}>Assessoria</th>
@@ -255,10 +241,9 @@ export default function App() {
           </thead>
           <tbody>
             {rows.map((row, i) => {
-              const cidade = row[indices.cidade] || "Desconhecido";
-              if (!cidade) return null; // Pular linhas vazias
+              const cidade = row[indices.cidade] ? String(row[indices.cidade]) : "Desconhecido";
+              if (cidade === "Desconhecido" || cidade.trim() === "") return null; // Pular vazias
               
-              // O ID no Firebase será o nome da cidade sem espaços/caracteres especiais p/ segurança
               const rowId = cidade.replace(/[^a-zA-Z0-9]/g, '_'); 
               const sheetStatus = row[indices.circulos];
               const overrideStatus = estadoOverrides[rowId]?.status;
@@ -306,29 +291,30 @@ export default function App() {
     const headers = capitalData[0];
     const rows = capitalData.slice(1);
 
-    const findIndex = (strMatch) => headers.findIndex(h => h.toLowerCase().includes(strMatch.toLowerCase()));
+    const safeHeaders = headers.map(h => String(h).toLowerCase());
+    const findIndex = (strMatch) => safeHeaders.findIndex(h => h.includes(strMatch.toLowerCase()));
     
     const indices = {
-      local: findIndex('Local'), // C
-      bairro: findIndex('Bairro REPLAN'), // D
-      distrito: findIndex('Distrito'), // E
-      regiao: findIndex('Região'), // F
+      local: findIndex('local'), // C
+      bairro: findIndex('bairro replan'), // D
+      distrito: findIndex('distrito'), // E
+      regiao: findIndex('região'), // F
       comp2022: findIndex('comp 2022'), // H
       votos2022: findIndex('votos 2022'), // I
       perc2022: findIndex('% votos comparecidos - 2022'), // J
       comp2024: findIndex('comp 2024'), // K
       votos2024: findIndex('votos 2024'), // L
       perc2024: findIndex('% votos comparecidos - 2024'), // M
-      articulador: findIndex('Equipe do mandato'), // O
-      estrategia: findIndex('Estratégia Territorial'), // R
+      articulador: findIndex('equipe do mandato'), // O
+      estrategia: findIndex('estratégia territorial'), // R
     };
 
     return (
       <div className="overflow-x-auto border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-        <table className="w-full text-sm text-left font-medium">
+        <table className="w-full text-sm text-left font-medium whitespace-nowrap">
           <thead className="bg-[#111111] text-white uppercase text-xs">
             <tr>
-              <th className="p-3 border-r-2 border-b-4 border-black sticky left-0 bg-[#111111] z-10 w-48">Localidade</th>
+              <th className="p-3 border-r-2 border-b-4 border-black sticky left-0 bg-[#111111] z-10 min-w-[300px]">Localidade</th>
               <th className="p-3 border-r-2 border-b-4 border-black">Geografia</th>
               <th className="p-3 border-r-2 border-b-4 border-black text-center" colSpan="3" style={{backgroundColor: COLORS.teal}}>Dados 2022</th>
               <th className="p-3 border-r-2 border-b-4 border-black text-center" colSpan="3" style={{backgroundColor: COLORS.mustard, color: COLORS.black}}>Dados 2024</th>
@@ -343,14 +329,14 @@ export default function App() {
               <th className="p-2 border-r-2 border-black">Comparecimento</th>
               <th className="p-2 border-r-2 border-black">Votos</th>
               <th className="p-2 border-r-2 border-black">% Votos</th>
-              <th className="p-2 border-r-2 border-black w-48">Articulador Responsável</th>
-              <th className="p-2 border-black w-56">Estratégia Territorial</th>
+              <th className="p-2 border-r-2 border-black min-w-[200px]">Articulador Responsável</th>
+              <th className="p-2 border-black min-w-[200px]">Estratégia Territorial</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => {
-              const local = row[indices.local];
-              if (!local) return null;
+              const local = row[indices.local] ? String(row[indices.local]) : "";
+              if (!local.trim()) return null;
               
               const rowId = (local + "_" + (row[indices.bairro]||"")).replace(/[^a-zA-Z0-9]/g, '_');
               
@@ -365,17 +351,17 @@ export default function App() {
 
               return (
                 <tr key={i} className="border-b-2 border-black hover:bg-gray-100 transition-colors">
-                  <td className="p-2 border-r-2 border-black sticky left-0 bg-white font-bold text-xs">{local}</td>
+                  <td className="p-2 border-r-2 border-black sticky left-0 bg-white font-bold text-xs whitespace-normal">{local}</td>
                   <td className="p-2 border-r-2 border-black text-xs">
-                    {row[indices.bairro]} <br/> 
+                    <span className="font-bold">{row[indices.bairro]}</span> <br/> 
                     <span className="text-gray-500">{row[indices.distrito]} - {row[indices.regiao]}</span>
                   </td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.comp2022]}</td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.votos2022]}</td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.perc2022]}</td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.comp2024]}</td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.votos2024]}</td>
-                  <td className="p-2 border-r-2 border-black">{row[indices.perc2024]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.comp2022]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.votos2022]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.perc2022]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.comp2024]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.votos2024]}</td>
+                  <td className="p-2 border-r-2 border-black text-center">{row[indices.perc2024]}</td>
                   <td className="p-2 border-r-2 border-black bg-red-50">
                      <input 
                       type="text"
@@ -458,7 +444,7 @@ export default function App() {
           {user && !loading && (
              <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-black text-white px-3 py-1 rounded-none">
                <Save size={14} className="text-[#e2b714]" />
-               Edições Sincronizadas
+               Edições Globais Ativas
              </div>
           )}
         </div>
@@ -466,7 +452,7 @@ export default function App() {
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
             <Loader2 className="animate-spin text-[#c32148] mb-4" size={48} />
-            <p className="font-bold uppercase tracking-wider">Lendo Planilha do Google...</p>
+            <p className="font-bold uppercase tracking-wider">Lendo API Segura...</p>
           </div>
         ) : (
           <div className="animate-fade-in">

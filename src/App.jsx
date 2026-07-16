@@ -1,15 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { AlertCircle, Loader2, Save, FileSpreadsheet } from 'lucide-react';
-
-// --- CONFIGURAÇÃO FIREBASE ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'tabulum-app-v1';
+import { AlertCircle, Loader2, Save, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
 
 // --- PALETA MONDRIAN ---
 const COLORS = {
@@ -44,135 +34,108 @@ const CAPITAL_ESTRATEGIA_OPTIONS = [
 ];
 
 // --- CONFIGURAÇÃO DA API (GOOGLE APPS SCRIPT) ---
-let envScriptUrl = null;
-try {
-  if (typeof process !== 'undefined' && process.env) {
-    envScriptUrl = process.env.REACT_APP_SCRIPT_URL || process.env.VITE_SCRIPT_URL;
+const getScriptUrl = () => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) {
+      return import.meta.env.VITE_SCRIPT_URL;
+    }
+    if (typeof process !== 'undefined' && process.env && process.env.VITE_SCRIPT_URL) {
+      return process.env.VITE_SCRIPT_URL;
+    }
+  } catch (e) {
+    console.warn("Aviso: Variáveis de ambiente não detectadas.");
   }
-} catch (e) {
-  // Ignora erros de ambiente restrito
-}
+  return ""; 
+};
 
-// SUBSTITUA "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI" PELA SUA URL DE VERDADE SE NÃO QUISER USAR VARIÁVEIS DE AMBIENTE
-const SCRIPT_URL = envScriptUrl || "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI"; 
+// Puxa a URL segura da Vercel
+const SCRIPT_URL = getScriptUrl(); 
 
-// --- COMPONENTE PRINCIPAL ---
 export default function App() {
-  const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('ESTADO');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
   const [error, setError] = useState(null);
 
   const [estadoData, setEstadoData] = useState([]);
   const [capitalData, setCapitalData] = useState([]);
-  
-  const [estadoOverrides, setEstadoOverrides] = useState({});
-  const [capitalOverrides, setCapitalOverrides] = useState({});
 
-  // 1. Autenticação Firebase (Garante Edições Universais)
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Erro na autenticação:", err);
-        setError("Falha ao conectar com o servidor de sincronização em tempo real.");
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
+  // 1. Buscar Dados da Planilha (GET)
+  const fetchSheets = async () => {
+    setLoading(true);
+    setError(null);
 
-  // 2. Buscar Dados Seguros do Google Apps Script
-  useEffect(() => {
-    const fetchSheets = async () => {
-      setLoading(true);
-      setError(null);
+    if (!SCRIPT_URL) {
+      setError("API não configurada: Adicione VITE_SCRIPT_URL nas variáveis de ambiente da Vercel.");
+      setLoading(false);
+      return;
+    }
 
-      // Verificação de segurança caso a URL não tenha sido preenchida
-      if (!SCRIPT_URL || SCRIPT_URL === "COLE_A_URL_DO_SEU_APPS_SCRIPT_AQUI") {
-        setError("API não configurada: Adicione a URL do Google Apps Script nas Variáveis de Ambiente do Vercel ou no código fonte.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await fetch(SCRIPT_URL);
-        
-        if (!response.ok) {
-          throw new Error("Não foi possível acessar os dados. O Apps Script pode não estar público.");
-        }
-
-        const data = await response.json();
-        
-        if (data.estado && data.capital) {
-          setEstadoData(data.estado);
-          setCapitalData(data.capital);
-        } else {
-           throw new Error("Formato de dados inválido recebido do Apps Script.");
-        }
-
-      } catch (err) {
-        console.error("Erro ao buscar dados:", err);
-        setError("Erro de conexão com a API da planilha segura. Verifique se o link do Apps Script está correto.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSheets();
-  }, []);
-
-  // 3. Ouvir Edições do Firebase (Overrides Universais)
-  useEffect(() => {
-    if (!user) return;
-
-    // Inscrição para modificações em ESTADO
-    const estadoRef = collection(db, 'artifacts', appId, 'public', 'data', 'estado_overrides');
-    const unsubEstado = onSnapshot(estadoRef, (snapshot) => {
-      const overrides = {};
-      snapshot.forEach(doc => { overrides[doc.id] = doc.data(); });
-      setEstadoOverrides(overrides);
-    }, (err) => console.error("Erro Estado Sync:", err));
-
-    // Inscrição para modificações em CAPITAL
-    const capitalRef = collection(db, 'artifacts', appId, 'public', 'data', 'capital_overrides');
-    const unsubCapital = onSnapshot(capitalRef, (snapshot) => {
-      const overrides = {};
-      snapshot.forEach(doc => { overrides[doc.id] = doc.data(); });
-      setCapitalOverrides(overrides);
-    }, (err) => console.error("Erro Capital Sync:", err));
-
-    return () => {
-      unsubEstado();
-      unsubCapital();
-    };
-  }, [user]);
-
-  // --- HANDLERS DE EDIÇÃO (Salvam na nuvem para todos) ---
-  const handleEstadoEdit = async (cidadeId, newValue) => {
-    if (!user) return;
     try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'estado_overrides', cidadeId);
-      await setDoc(docRef, { status: newValue }, { merge: true });
+      const response = await fetch(SCRIPT_URL);
+      if (!response.ok) throw new Error("Não foi possível acessar a planilha.");
+      const data = await response.json();
+      
+      if (data.estado && data.capital) {
+        setEstadoData(data.estado);
+        setCapitalData(data.capital);
+      } else {
+         throw new Error("Formato de dados inválido.");
+      }
     } catch (err) {
-      console.error("Erro ao salvar edição:", err);
+      console.error("Erro ao buscar dados:", err);
+      setError("Erro de conexão com a planilha. Verifique o link do Apps Script.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleCapitalEdit = async (rowId, field, newValue) => {
-    if (!user) return;
+  useEffect(() => {
+    fetchSheets();
+  }, []); // Roda apenas uma vez ao abrir o app
+
+  // 2. Gravar Edição na Planilha (POST)
+  const updateSheet = async (sheetName, rowIdx, colIdx, value) => {
+    setSaving(true);
     try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'capital_overrides', rowId);
-      await setDoc(docRef, { [field]: newValue }, { merge: true });
+      // rowIdx + 2: compensa o cabeçalho (+1) e o fato do array do Google Sheets começar em 1 (+1)
+      // colIdx + 1: array do Google Sheets começa na coluna 1 (A)
+      const payload = {
+        action: 'update',
+        sheetName: sheetName,
+        row: rowIdx + 2, 
+        col: colIdx + 1, 
+        value: value
+      };
+
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      
+      setLastSaved(new Date());
     } catch (err) {
-      console.error("Erro ao salvar edição:", err);
+      console.error("Erro ao salvar:", err);
+      alert("Houve um erro de rede ao tentar salvar a informação na planilha.");
+    } finally {
+      setSaving(false);
     }
+  };
+
+  // --- HANDLERS DE EDIÇÃO (Otimistas - Atualizam a tela na hora e mandam pro Google) ---
+  const handleEstadoEdit = (rowIndex, colIndex, newValue) => {
+    const newData = [...estadoData];
+    newData[rowIndex + 1][colIndex] = newValue; // +1 pra pular o cabeçalho localmente
+    setEstadoData(newData);
+    updateSheet('ESTADO', rowIndex, colIndex, newValue);
+  };
+
+  const handleCapitalEdit = (rowIndex, colIndex, newValue) => {
+    const newData = [...capitalData];
+    newData[rowIndex + 1][colIndex] = newValue; // +1 pra pular o cabeçalho localmente
+    setCapitalData(newData);
+    updateSheet('CAPITAL', rowIndex, colIndex, newValue);
   };
 
   // --- RENDERIZADORES DE TABELA ---
@@ -181,29 +144,28 @@ export default function App() {
     const headers = estadoData[0];
     const rows = estadoData.slice(1);
 
-    // Converte todos os cabeçalhos para string para garantir busca sem erros
     const safeHeaders = headers.map(h => String(h).toLowerCase());
     const findIndex = (strMatch) => safeHeaders.findIndex(h => h.includes(strMatch.toLowerCase()));
     
     const indices = {
-      cidade: findIndex('cidade'), // A
-      regiao: findIndex('região'), // B
-      votos2018: findIndex('2018'), // C
-      votos2022: findIndex('2022'), // D
-      percVotos: findIndex('% dos votos'), // E
-      chapaPsol: findIndex('chapa psol'), // F
-      leads: findIndex('leads'), // G
-      equipe: findIndex('equipe do mandato'), // H
-      diretorio: findIndex('diretório'), // I
-      diarias: findIndex('diárias'), // J
-      liderancasMilo: findIndex('lideranças (milo)'), // K
-      loa2023: findIndex('loa 2023'), // M
-      loa2024: findIndex('loa 2024'), // O
-      valor2023: findIndex('valor total de emendas 2023'), // L
-      valor2024: findIndex('valor total de emendas 2024'), // N
-      valor2025: findIndex('valor total de emendas 2025'), // P
-      loa2025: findIndex('loa 2025'), // Q
-      circulos: findIndex('círculos territoriais'), // U
+      cidade: findIndex('cidade'), 
+      regiao: findIndex('região'), 
+      votos2018: findIndex('2018'), 
+      votos2022: findIndex('2022'), 
+      percVotos: findIndex('% dos votos'), 
+      chapaPsol: findIndex('chapa psol'), 
+      leads: findIndex('leads'), 
+      equipe: findIndex('equipe do mandato'), 
+      diretorio: findIndex('diretório'), 
+      diarias: findIndex('diárias'), 
+      liderancasMilo: findIndex('lideranças (milo)'), 
+      loa2023: findIndex('loa 2023'), 
+      loa2024: findIndex('loa 2024'), 
+      valor2023: findIndex('valor total de emendas 2023'), 
+      valor2024: findIndex('valor total de emendas 2024'), 
+      valor2025: findIndex('valor total de emendas 2025'), 
+      loa2025: findIndex('loa 2025'), 
+      circulos: findIndex('círculos territoriais'), 
     };
 
     return (
@@ -242,12 +204,9 @@ export default function App() {
           <tbody>
             {rows.map((row, i) => {
               const cidade = row[indices.cidade] ? String(row[indices.cidade]) : "Desconhecido";
-              if (cidade === "Desconhecido" || cidade.trim() === "") return null; // Pular vazias
+              if (cidade === "Desconhecido" || cidade.trim() === "") return null; 
               
-              const rowId = cidade.replace(/[^a-zA-Z0-9]/g, '_'); 
-              const sheetStatus = row[indices.circulos];
-              const overrideStatus = estadoOverrides[rowId]?.status;
-              const displayStatus = overrideStatus !== undefined ? overrideStatus : (sheetStatus || '');
+              const displayStatus = row[indices.circulos] || '';
 
               return (
                 <tr key={i} className="border-b-2 border-black hover:bg-gray-100 transition-colors">
@@ -272,7 +231,7 @@ export default function App() {
                     <select 
                       className="w-full bg-white border-2 border-black p-1 font-bold outline-none cursor-pointer hover:bg-yellow-100 transition-colors focus:ring-0"
                       value={displayStatus}
-                      onChange={(e) => handleEstadoEdit(rowId, e.target.value)}
+                      onChange={(e) => handleEstadoEdit(i, indices.circulos, e.target.value)}
                     >
                       {ESTADO_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || "-- Selecione --"}</option>)}
                     </select>
@@ -295,18 +254,18 @@ export default function App() {
     const findIndex = (strMatch) => safeHeaders.findIndex(h => h.includes(strMatch.toLowerCase()));
     
     const indices = {
-      local: findIndex('local'), // C
-      bairro: findIndex('bairro replan'), // D
-      distrito: findIndex('distrito'), // E
-      regiao: findIndex('região'), // F
-      comp2022: findIndex('comp 2022'), // H
-      votos2022: findIndex('votos 2022'), // I
-      perc2022: findIndex('% votos comparecidos - 2022'), // J
-      comp2024: findIndex('comp 2024'), // K
-      votos2024: findIndex('votos 2024'), // L
-      perc2024: findIndex('% votos comparecidos - 2024'), // M
-      articulador: findIndex('equipe do mandato'), // O
-      estrategia: findIndex('estratégia territorial'), // R
+      local: findIndex('local'),
+      bairro: findIndex('bairro replan'), 
+      distrito: findIndex('distrito'), 
+      regiao: findIndex('região'), 
+      comp2022: findIndex('comp 2022'), 
+      votos2022: findIndex('votos 2022'), 
+      perc2022: findIndex('% votos comparecidos - 2022'),
+      comp2024: findIndex('comp 2024'), 
+      votos2024: findIndex('votos 2024'), 
+      perc2024: findIndex('% votos comparecidos - 2024'),
+      articulador: findIndex('equipe do mandato'), 
+      estrategia: findIndex('estratégia territorial'), 
     };
 
     return (
@@ -338,16 +297,8 @@ export default function App() {
               const local = row[indices.local] ? String(row[indices.local]) : "";
               if (!local.trim()) return null;
               
-              const rowId = (local + "_" + (row[indices.bairro]||"")).replace(/[^a-zA-Z0-9]/g, '_');
-              
-              const sheetArticulador = row[indices.articulador];
-              const sheetEstrategia = row[indices.estrategia];
-              
-              const overrideArticulador = capitalOverrides[rowId]?.articulador;
-              const overrideEstrategia = capitalOverrides[rowId]?.estrategia;
-              
-              const displayArticulador = overrideArticulador !== undefined ? overrideArticulador : (sheetArticulador || '');
-              const displayEstrategia = overrideEstrategia !== undefined ? overrideEstrategia : (sheetEstrategia || '');
+              const displayArticulador = row[indices.articulador] || '';
+              const displayEstrategia = row[indices.estrategia] || '';
 
               return (
                 <tr key={i} className="border-b-2 border-black hover:bg-gray-100 transition-colors">
@@ -368,14 +319,14 @@ export default function App() {
                       className="w-full bg-white border-2 border-black p-1 font-bold outline-none focus:ring-0"
                       placeholder="Nome..."
                       value={displayArticulador}
-                      onChange={(e) => handleCapitalEdit(rowId, 'articulador', e.target.value)}
+                      onChange={(e) => handleCapitalEdit(i, indices.articulador, e.target.value)}
                     />
                   </td>
                   <td className="p-2 border-black bg-red-50">
                      <select 
                       className="w-full bg-white border-2 border-black p-1 font-bold outline-none cursor-pointer focus:ring-0"
                       value={displayEstrategia}
-                      onChange={(e) => handleCapitalEdit(rowId, 'estrategia', e.target.value)}
+                      onChange={(e) => handleCapitalEdit(i, indices.estrategia, e.target.value)}
                     >
                       {CAPITAL_ESTRATEGIA_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || "-- Selecione --"}</option>)}
                     </select>
@@ -440,19 +391,36 @@ export default function App() {
           <h2 className="text-2xl font-black uppercase tracking-tight flex items-center gap-3">
             <span className="w-4 h-4 inline-block border-2 border-black" style={{ backgroundColor: activeTab === 'ESTADO' ? COLORS.mustard : COLORS.teal }}></span>
             Visão Geral: {activeTab}
+            <button 
+               onClick={fetchSheets}
+               className="ml-4 text-xs bg-black text-white px-3 py-1 uppercase tracking-widest hover:bg-gray-800 transition-colors"
+            >
+              Atualizar Dados
+            </button>
           </h2>
-          {user && !loading && (
-             <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-black text-white px-3 py-1 rounded-none">
-               <Save size={14} className="text-[#e2b714]" />
-               Edições Globais Ativas
-             </div>
-          )}
+          
+          <div className="flex items-center gap-2">
+            {saving && (
+              <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#e2b714] text-black px-3 py-1 border-2 border-black">
+                <Loader2 size={14} className="animate-spin" />
+                Salvando na Planilha...
+              </div>
+            )}
+            {!saving && lastSaved && (
+              <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#008080] text-white px-3 py-1 border-2 border-black">
+                <CheckCircle2 size={14} />
+                Salvo com sucesso
+              </div>
+            )}
+          </div>
         </div>
 
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
             <Loader2 className="animate-spin text-[#c32148] mb-4" size={48} />
-            <p className="font-bold uppercase tracking-wider">Lendo API Segura...</p>
+            <p className="font-bold uppercase tracking-wider text-center">
+              Lendo Google Sheets...
+            </p>
           </div>
         ) : (
           <div className="animate-fade-in">

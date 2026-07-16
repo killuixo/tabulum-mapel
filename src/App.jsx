@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Loader2, Save, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
 
 // --- PALETA MONDRIAN ---
 const COLORS = {
@@ -99,8 +98,6 @@ export default function App() {
   const updateSheet = async (sheetName, rowIdx, colIdx, value) => {
     setSaving(true);
     try {
-      // rowIdx + 2: compensa o cabeçalho (+1) e o fato do array do Google Sheets começar em 1 (+1)
-      // colIdx + 1: array do Google Sheets começa na coluna 1 (A)
       const payload = {
         action: 'update',
         sheetName: sheetName,
@@ -126,14 +123,14 @@ export default function App() {
   // --- HANDLERS DE EDIÇÃO (Otimistas - Atualizam a tela na hora e mandam pro Google) ---
   const handleEstadoEdit = (rowIndex, colIndex, newValue) => {
     const newData = [...estadoData];
-    newData[rowIndex + 1][colIndex] = newValue; // +1 pra pular o cabeçalho localmente
+    newData[rowIndex + 1][colIndex] = newValue;
     setEstadoData(newData);
     updateSheet('ESTADO', rowIndex, colIndex, newValue);
   };
 
   const handleCapitalEdit = (rowIndex, colIndex, newValue) => {
     const newData = [...capitalData];
-    newData[rowIndex + 1][colIndex] = newValue; // +1 pra pular o cabeçalho localmente
+    newData[rowIndex + 1][colIndex] = newValue;
     setCapitalData(newData);
     updateSheet('CAPITAL', rowIndex, colIndex, newValue);
   };
@@ -345,8 +342,8 @@ export default function App() {
       {/* HEADER MONDRIAN */}
       <header className="border-b-4 border-black bg-white flex flex-col md:flex-row shadow-md relative z-20">
         <div className="flex-1 p-6 md:p-8 flex items-center gap-4 border-b-4 md:border-b-0 md:border-r-4 border-black" style={{ backgroundColor: COLORS.white }}>
-          <div className="w-12 h-12 border-4 border-black bg-[#c32148] flex-shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center">
-             <FileSpreadsheet className="text-white" size={24} />
+          <div className="w-12 h-12 border-4 border-black bg-[#c32148] flex-shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center text-2xl">
+             📊
           </div>
           <div>
             <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">Tabulum</h1>
@@ -382,8 +379,7 @@ export default function App() {
       <main className="p-4 md:p-8 max-w-[1600px] mx-auto">
         {error && (
           <div className="mb-6 border-4 border-black bg-[#c32148] text-white p-4 font-bold flex items-center gap-3 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-            <AlertCircle />
-            <span>{error}</span>
+            ⚠️ <span>{error}</span>
           </div>
         )}
 
@@ -402,14 +398,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             {saving && (
               <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#e2b714] text-black px-3 py-1 border-2 border-black">
-                <Loader2 size={14} className="animate-spin" />
-                Salvando na Planilha...
+                ⏳ Salvando na Planilha...
               </div>
             )}
             {!saving && lastSaved && (
               <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 bg-[#008080] text-white px-3 py-1 border-2 border-black">
-                <CheckCircle2 size={14} />
-                Salvo com sucesso
+                ✅ Salvo com sucesso
               </div>
             )}
           </div>
@@ -417,7 +411,7 @@ export default function App() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-            <Loader2 className="animate-spin text-[#c32148] mb-4" size={48} />
+            <div className="text-4xl mb-4 animate-bounce">⏳</div>
             <p className="font-bold uppercase tracking-wider text-center">
               Lendo Google Sheets...
             </p>

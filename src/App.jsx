@@ -138,6 +138,33 @@ export default function App() {
     }
   };
 
+  // --- Função auxiliar para gerar os Mapas de Calor (Treemaps) ---
+  const renderHeatmap = (title, dataArr, maxVal, headerBgColor, headerTextColor, subTitle) => (
+    <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col h-full">
+      <div className="p-4 border-b-4 border-black" style={{ backgroundColor: headerBgColor, color: headerTextColor }}>
+         <h3 className="font-black text-lg uppercase tracking-widest">{title}</h3>
+         {subTitle && <p className="text-[10px] uppercase font-bold opacity-80 mt-1">{subTitle}</p>}
+      </div>
+      <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[400px]">
+        {dataArr.map(([label, val], idx) => {
+          const perc = Math.max((val / maxVal) * 100, 1);
+          const barColor = idx % 3 === 0 ? COLORS.crimson : idx % 3 === 1 ? COLORS.teal : COLORS.mustard;
+          return (
+            <div key={label} className="flex flex-col">
+              <div className="flex justify-between text-xs font-bold uppercase mb-1 text-black">
+                <span className="truncate pr-2">{label}</span>
+                <span>{val.toLocaleString('pt-BR')} V</span>
+              </div>
+              <div className="w-full bg-gray-100 border-2 border-black h-5 flex">
+                <div className="h-full border-r-2 border-black transition-all" style={{ width: `${perc}%`, backgroundColor: barColor }}></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderDashboard = () => {
     if (estadoData.length < 2 || capitalData.length < 2) return null;
     
@@ -172,8 +199,9 @@ export default function App() {
     });
 
     const arrRegioesSC = Object.entries(regioesSC).sort((a, b) => b[1] - a[1]);
+    const maxVotosSC = arrRegioesSC.length > 0 ? arrRegioesSC[0][1] : 1;
     
-    // Construtor do Gráfico de Pizza (CSS Conic Gradient) para SC
+    // Construtor do Gráfico de Pizza para SC
     let anguloAtualSC = 0;
     const gradientStopsSC = arrRegioesSC.map(([reg, votos], idx) => {
       const perc = (votos / totalVotosSC) * 100;
@@ -186,23 +214,36 @@ export default function App() {
     // --- Processamento CAPITAL ---
     const capHeaders = capitalData[0].map(h => String(h).toLowerCase());
     const idxCapRegiao = capHeaders.findIndex(h => h === 'região');
+    const idxCapDistrito = capHeaders.findIndex(h => h === 'distrito');
     const idxCapVotos = capHeaders.findIndex(h => h === 'votos 2024' || h === 'votos 2022');
 
     const regioesFloripa = {};
+    const distritosFloripa = {};
     let totalVotosCapital = 0;
 
     capitalData.slice(1).forEach(row => {
       const regiao = row[idxCapRegiao] ? String(row[idxCapRegiao]).trim() : 'Não Mapeada';
+      const distrito = row[idxCapDistrito] ? String(row[idxCapDistrito]).trim() : 'Não Mapeado';
       const votos = parseSortValue(row[idxCapVotos]);
+      
       if (votos > 0) {
+        // Para Regiões Capital
         if (!regioesFloripa[regiao]) regioesFloripa[regiao] = 0;
         regioesFloripa[regiao] += votos;
+        // Para Distritos Capital
+        if (!distritosFloripa[distrito]) distritosFloripa[distrito] = 0;
+        distritosFloripa[distrito] += votos;
+        
         totalVotosCapital += votos;
       }
     });
 
     const arrRegioesFloripa = Object.entries(regioesFloripa).sort((a, b) => b[1] - a[1]);
+    const arrDistritosFloripa = Object.entries(distritosFloripa).sort((a, b) => b[1] - a[1]);
     
+    const maxVotosCapRegiao = arrRegioesFloripa.length > 0 ? arrRegioesFloripa[0][1] : 1;
+    const maxVotosCapDistrito = arrDistritosFloripa.length > 0 ? arrDistritosFloripa[0][1] : 1;
+
     // Construtor do Gráfico de Pizza para Capital
     let anguloAtualCap = 0;
     const gradientStopsCap = arrRegioesFloripa.map(([reg, votos], idx) => {
@@ -218,108 +259,137 @@ export default function App() {
     const topCidadesEmendas = cidadesRelacao.filter(c => c.emendas > 0).slice(0, 10);
 
     return (
-      <div className="flex flex-col gap-8 animate-fade-in">
+      <div className="flex flex-col gap-12 animate-fade-in pb-12">
         
-        {/* SECÇÃO 1: GRÁFICOS DE PIZZA */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* Pizza SC */}
-          <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
-            <div className="bg-black text-white p-4 border-b-4 border-black">
-               <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Estado (SC)</h3>
-               <p className="text-[10px] text-gray-400 uppercase">*Exceto Grande Florianópolis</p>
-            </div>
-            <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
-               <div 
-                 className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
-                 style={{ background: `conic-gradient(${gradientStopsSC})` }}
-               ></div>
-               <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase">
-                  {arrRegioesSC.slice(0, 6).map(([reg, votos], idx) => (
-                    <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 border border-black inline-block" style={{backgroundColor: PIE_COLORS[idx % PIE_COLORS.length]}}></span>
-                        <span className="truncate max-w-[120px]" title={reg}>{reg}</span>
-                      </div>
-                      <span className="text-gray-600">{formatPercentage(votos / totalVotosSC)}</span>
-                    </div>
-                  ))}
-               </div>
-            </div>
+        {/* =========================================
+            SUBSEÇÃO: ESTADO
+        ========================================= */}
+        <div className="flex flex-col gap-6">
+          <div className="bg-[#111] p-4 border-4 border-black shadow-[4px_4px_0px_0px_rgba(226,183,20,1)]">
+            <h2 className="text-2xl font-black uppercase text-white tracking-widest">Panorama: Estado de SC</h2>
           </div>
 
-          {/* Pizza CAPITAL */}
-          <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
-            <div className="bg-[#e2b714] text-black p-4 border-b-4 border-black">
-               <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Capital</h3>
-               <p className="text-[10px] uppercase font-bold text-gray-700">Volume de votos por região</p>
-            </div>
-            <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
-               <div 
-                 className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
-                 style={{ background: `conic-gradient(${gradientStopsCap})` }}
-               ></div>
-               <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase">
-                  {arrRegioesFloripa.map(([reg, votos], idx) => (
-                    <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 border border-black inline-block" style={{backgroundColor: PIE_COLORS[idx % PIE_COLORS.length]}}></span>
-                        <span>{reg}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Pizza SC */}
+            <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
+              <div className="bg-[#111] text-white p-4 border-b-4 border-black">
+                 <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Estado (SC)</h3>
+                 <p className="text-[10px] text-gray-400 uppercase">*Exceto Grande Florianópolis</p>
+              </div>
+              <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
+                 <div 
+                   className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
+                   style={{ background: `conic-gradient(${gradientStopsSC})` }}
+                 ></div>
+                 <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase overflow-y-auto max-h-[200px]">
+                    {arrRegioesSC.map(([reg, votos], idx) => (
+                      <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 border border-black inline-block shrink-0" style={{backgroundColor: PIE_COLORS[idx % PIE_COLORS.length]}}></span>
+                          <span className="truncate max-w-[120px]" title={reg}>{reg}</span>
+                        </div>
+                        <span className="text-gray-600">{formatPercentage(votos / totalVotosSC)}</span>
                       </div>
-                      <span className="text-gray-600">{formatPercentage(votos / totalVotosCapital)}</span>
+                    ))}
+                 </div>
+              </div>
+            </div>
+
+            {/* Mapa de Calor: Regiões SC */}
+            {renderHeatmap("Mapa de Calor: Regiões (SC)", arrRegioesSC, maxVotosSC, COLORS.black, COLORS.white, "*Exceto Grande Florianópolis")}
+          </div>
+
+          {/* Correlação de ROI */}
+          <div className="border-4 border-black bg-white p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <div className="mb-6 border-b-4 border-black pb-4">
+              <h3 className="font-black text-2xl uppercase tracking-tighter">Correlação: Investimento x Votos</h3>
+              <p className="text-xs md:text-sm font-bold text-gray-500 uppercase mt-2">
+                Compara a proporção de <span className="text-[#008080]">verba de emendas enviada (R$)</span> com a proporção de <span className="text-[#c32148]">votos obtidos</span> nos 10 municípios com maiores aportes. Permite visualizar o ROI (Retorno) Político.
+              </p>
+            </div>
+            
+            <div className="flex flex-col gap-6">
+              {topCidadesEmendas.map((item, idx) => {
+                const maxEmenda = topCidadesEmendas[0].emendas;
+                const maxVotosT = Math.max(...topCidadesEmendas.map(c => c.votos));
+                
+                const percEmenda = Math.max((item.emendas / maxEmenda) * 100, 2);
+                const percVotos = Math.max((item.votos / maxVotosT) * 100, 2);
+
+                return (
+                  <div key={item.cidade} className="flex flex-col font-bold uppercase text-xs sm:text-sm">
+                    <div className="mb-2 truncate text-black">{idx + 1}. {item.cidade}</div>
+                    
+                    {/* Barra Emendas */}
+                    <div className="flex items-center gap-4 mb-1">
+                      <div className="w-24 sm:w-32 shrink-0 text-[#008080] truncate" title={formatCurrency(item.emendas)}>
+                        {formatCurrency(item.emendas)}
+                      </div>
+                      <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
+                        <div className="h-full bg-[#008080]" style={{ width: `${percEmenda}%` }}></div>
+                      </div>
                     </div>
-                  ))}
-               </div>
+                    
+                    {/* Barra Votos */}
+                    <div className="flex items-center gap-4">
+                      <div className="w-24 sm:w-32 shrink-0 text-[#c32148]">
+                        {item.votos.toLocaleString('pt-BR')} V
+                      </div>
+                      <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
+                        <div className="h-full bg-[#c32148]" style={{ width: `${percVotos}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
 
-        {/* SECÇÃO 2: CORRELAÇÃO DE ROI */}
-        <div className="border-4 border-black bg-white p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
-          <div className="mb-6 border-b-4 border-black pb-4">
-            <h3 className="font-black text-2xl uppercase tracking-tighter">Correlação: Investimento x Votos</h3>
-            <p className="text-xs md:text-sm font-bold text-gray-500 uppercase mt-2">
-              Compara a proporção de <span className="text-[#008080]">verba de emendas enviada (R$)</span> com a proporção de <span className="text-[#c32148]">votos obtidos</span> nos 10 municípios com maiores aportes. Permite visualizar o ROI (Retorno) Político.
-            </p>
+        {/* =========================================
+            SUBSEÇÃO: CAPITAL
+        ========================================= */}
+        <div className="flex flex-col gap-6 mt-6">
+          <div className="bg-[#008080] p-4 border-4 border-black shadow-[4px_4px_0px_0px_rgba(195,33,72,1)]">
+            <h2 className="text-2xl font-black uppercase text-white tracking-widest">Panorama: Capital (Florianópolis)</h2>
           </div>
-          
-          <div className="flex flex-col gap-6">
-            {topCidadesEmendas.map((item, idx) => {
-              const maxEmenda = topCidadesEmendas[0].emendas;
-              // Para evitar barras microscópicas nos votos, comparamos com o máximo DESTA lista
-              const maxVotosT = Math.max(...topCidadesEmendas.map(c => c.votos));
-              
-              const percEmenda = Math.max((item.emendas / maxEmenda) * 100, 2);
-              const percVotos = Math.max((item.votos / maxVotosT) * 100, 2);
 
-              return (
-                <div key={item.cidade} className="flex flex-col font-bold uppercase text-xs sm:text-sm">
-                  <div className="mb-2 truncate text-black">{idx + 1}. {item.cidade}</div>
-                  
-                  {/* Barra Emendas */}
-                  <div className="flex items-center gap-4 mb-1">
-                    <div className="w-24 sm:w-32 shrink-0 text-[#008080] truncate" title={formatCurrency(item.emendas)}>
-                      {formatCurrency(item.emendas)}
-                    </div>
-                    <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
-                      <div className="h-full bg-[#008080]" style={{ width: `${percEmenda}%` }}></div>
-                    </div>
-                  </div>
-                  
-                  {/* Barra Votos */}
-                  <div className="flex items-center gap-4">
-                    <div className="w-24 sm:w-32 shrink-0 text-[#c32148]">
-                      {item.votos.toLocaleString('pt-BR')} V
-                    </div>
-                    <div className="flex-1 bg-gray-100 h-4 sm:h-5 border-2 border-black flex">
-                      <div className="h-full bg-[#c32148]" style={{ width: `${percVotos}%` }}></div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Pizza CAPITAL */}
+            <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
+              <div className="bg-[#e2b714] text-black p-4 border-b-4 border-black">
+                 <h3 className="font-black text-lg uppercase tracking-widest">Distribuição Capital</h3>
+                 <p className="text-[10px] uppercase font-bold text-gray-700">Volume de votos por região</p>
+              </div>
+              <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
+                 <div 
+                   className="w-48 h-48 rounded-full border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0"
+                   style={{ background: `conic-gradient(${gradientStopsCap})` }}
+                 ></div>
+                 <div className="flex flex-col gap-2 w-full text-xs font-bold uppercase overflow-y-auto max-h-[200px]">
+                    {arrRegioesFloripa.map(([reg, votos], idx) => (
+                      <div key={reg} className="flex items-center justify-between border-b-2 border-gray-100 pb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 border border-black inline-block shrink-0" style={{backgroundColor: PIE_COLORS[idx % PIE_COLORS.length]}}></span>
+                          <span className="truncate max-w-[120px]" title={reg}>{reg}</span>
+                        </div>
+                        <span className="text-gray-600">{formatPercentage(votos / totalVotosCapital)}</span>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+
+            {/* Mapa de Calor: Regiões Capital */}
+            {renderHeatmap("Mapa de Calor: Regiões (Capital)", arrRegioesFloripa, maxVotosCapRegiao, COLORS.mustard, COLORS.black, "Volume de votos mapeados")}
+          </div>
+
+          {/* Mapa de Calor: Distritos Capital */}
+          <div className="grid grid-cols-1 gap-8">
+            {renderHeatmap("Mapa de Calor: Distritos (Capital)", arrDistritosFloripa, maxVotosCapDistrito, COLORS.crimson, COLORS.white, "Comparativo por distrito")}
           </div>
         </div>
+
       </div>
     );
   };
@@ -349,7 +419,6 @@ export default function App() {
     return { headers, sortedRows: rows };
   };
 
-  // Função para limpar e encurtar os títulos da planilha para não quebrarem o layout
   const getShortHeader = (headerString) => {
     const s = String(headerString).toUpperCase();
     if (s.includes('DIÁRIAS')) return 'DIÁRIAS';
@@ -459,7 +528,6 @@ export default function App() {
       );
     }
 
-    // VISÃO TABELA
     return (
       <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col animate-fade-in relative z-0">
         <div className="overflow-auto max-h-[70vh]">
@@ -471,13 +539,11 @@ export default function App() {
                   let bgColor = '#111111';
                   let tColor = 'white';
                   
-                  // Larguras dinâmicas para economizar espaço
                   let widthClass = 'w-20'; 
                   if (i === indices.title || i === indices.subtitle) widthClass = 'min-w-[140px] max-w-[220px]';
                   else if (shortH === 'SEÇÃO') widthClass = 'w-16 max-w-[80px]';
                   else if (i === indices.editField1 || i === indices.editField2) widthClass = 'min-w-[120px]';
 
-                  // Cores para áreas editáveis
                   if (tabName === 'ESTADO' && i === indices.editField1) { bgColor = COLORS.mustard; tColor = 'black'; }
                   if (tabName === 'CAPITAL' && (i === indices.editField1 || i === indices.editField2)) { bgColor = COLORS.crimson; }
 
@@ -507,14 +573,13 @@ export default function App() {
                       const isTitle = colIdx === indices.title;
                       const hStr = String(headers[colIdx]).toUpperCase();
                       const isLOA = hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA');
-                      const isPerc = hStr.includes('%');
+                      const isPerc = hStr.includes('%') || hStr.includes('ROI');
                       const isSecao = hStr === 'SEÇÃO';
                       
                       let content = cell;
                       if (isLOA) content = formatCurrency(cell);
                       else if (isPerc) content = formatPercentage(cell);
 
-                      // Lógica da Célula SEÇÃO (Encurtar e Hover)
                       if (isSecao) {
                         return (
                           <td key={colIdx} className="p-2 border-r-2 border-black align-top font-bold text-[10px]">
@@ -530,7 +595,6 @@ export default function App() {
                         );
                       }
 
-                      // Campos Editáveis
                       if (tabName === 'ESTADO' && colIdx === indices.editField1) {
                         return (
                           <td key={colIdx} className="p-0 border-r-2 border-black bg-yellow-50 align-top">
@@ -558,7 +622,6 @@ export default function App() {
                         );
                       }
 
-                      // Células Normais (Com quebra de linha permitida para textos longos)
                       return (
                         <td 
                           key={colIdx} 
@@ -600,7 +663,7 @@ export default function App() {
                const val = row[i];
                const hStr = String(h).toUpperCase();
                const isLOA = hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA');
-               const isPerc = hStr.includes('%');
+               const isPerc = hStr.includes('%') || hStr.includes('ROI');
                
                let displayVal = val || '-';
                if (isLOA) displayVal = formatCurrency(val);
@@ -611,7 +674,6 @@ export default function App() {
                const isArticulador = tab === 'CAPITAL' && safeH.includes('equipe');
                const isEstrategia = tab === 'CAPITAL' && safeH.includes('estratégia');
 
-               // Campos Editáveis dentro do Modal
                if (isStatus) {
                  return (
                     <div key={i} className="flex flex-col border-b-2 border-black pb-2 col-span-1 md:col-span-2">

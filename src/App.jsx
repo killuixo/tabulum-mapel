@@ -79,7 +79,7 @@ const getShortHeader = (headerString) => {
   const s = String(headerString).toUpperCase();
   if (s.includes('DIÁRIAS')) return 'DIÁRIAS';
   if (s.includes('EQUIPE')) return 'ARTICULADOR';
-  if (s.includes('VALOR TOTAL DE EMENDAS') || s.includes('EMENDA')) return 'EMENDAS';
+  if (s.includes('VALOR TOTAL DE EMENDAS') || s.includes('EMENDA') || s.includes('LOA')) return 'EMENDAS';
   if (s.includes('% DOS VOTOS') || s.includes('% VOTOS')) return '% VOTOS';
   if (s.includes('DIRETÓRIO')) return 'DIRETÓRIO';
   if (s.includes('CÍRCULOS TERRITORIAIS')) return 'STATUS (CÍRCULOS)';
@@ -91,16 +91,26 @@ const getShortHeader = (headerString) => {
 
 // Funções de inteligência de dados (identificar índices dinamicamente)
 const findIndices = (headers) => {
-  const safeH = headers.map(h => String(h).toLowerCase());
-  return {
+  const safeH = headers.map(h => String(h).trim().toLowerCase());
+  
+  const indices = {
     cidade: safeH.findIndex(h => h === 'cidade' || h === 'município' || h === 'local'),
     regiao: safeH.findIndex(h => h.includes('região') || h.includes('bairro replan') || h.includes('distrito')),
     votos: safeH.findIndex(h => h.includes('2022') || h.includes('votos') || h === 'voto'),
-    emendas: safeH.filter(h => h.includes('emenda') || h.includes('loa')), // Array de colunas de emendas
     diarias: safeH.findIndex(h => h.includes('diária')),
     status: safeH.findIndex(h => h.includes('círculos') || h.includes('estratégia territorial')),
-    articulador: safeH.findIndex(h => h.includes('equipe do mandato') || h.includes('articulador'))
+    articulador: safeH.findIndex(h => h.includes('equipe do mandato') || h.includes('articulador')),
+    emendas: []
   };
+
+  // Extrai estritamente os ÍNDICES NUMÉRICOS das colunas das LOAs (evitando duplicidade com Total)
+  safeH.forEach((h, idx) => {
+    if (h.includes('loa 20')) {
+      indices.emendas.push(idx);
+    }
+  });
+
+  return indices;
 };
 
 // --- COMPONENTE PRINCIPAL ---

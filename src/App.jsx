@@ -53,6 +53,28 @@ const parseSortValue = (val) => {
   return (!isNaN(parsed) && String(parsed) === str.replace(',', '.')) ? parsed : str.toLowerCase();
 };
 
+// Nova função estrita para soma matemática (ignora textos, formata R$ e células vazias para 0)
+const parseNumberStrict = (val) => {
+  if (!val && val !== 0) return 0;
+  if (typeof val === 'number') return val;
+  let str = String(val).trim();
+  if (str === '-' || str === '') return 0;
+  
+  // Remove R$ e espaços
+  str = str.replace(/[R$\s]/g, '');
+  
+  // Trata formato brasileiro (vírgula para decimais)
+  if (str.includes(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else if (/\.\d{3}$/.test(str) || str.split('.').length > 2) {
+    // Remove pontos se for separador de milhar (ex: 1.500)
+    str = str.replace(/\./g, '');
+  }
+  
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 const getShortHeader = (headerString) => {
   const s = String(headerString).toUpperCase();
   if (s.includes('DIÁRIAS')) return 'DIÁRIAS';
@@ -188,10 +210,11 @@ export default function App() {
       const nome = row[idx.cidade] ? String(row[idx.cidade]).trim() : 'Desconhecido';
       if (!nome || nome === 'Desconhecido') return;
 
-      const votos = idx.votos > -1 ? parseSortValue(row[idx.votos]) : 0;
+      // Utilizando parseNumberStrict para matemática precisa
+      const votos = idx.votos > -1 ? parseNumberStrict(row[idx.votos]) : 0;
       let emendas = 0;
-      idx.emendas.forEach(i => { emendas += (parseSortValue(row[i]) || 0); });
-      const diarias = idx.diarias > -1 ? parseSortValue(row[idx.diarias]) : 0;
+      idx.emendas.forEach(i => { emendas += parseNumberStrict(row[i]); });
+      const diarias = idx.diarias > -1 ? parseNumberStrict(row[idx.diarias]) : 0;
       
       registros.push({ nome, votos, emendas, diarias });
     });
@@ -226,7 +249,7 @@ export default function App() {
     const analyticsCap = processAnalytics(capitalData, 'CAPITAL');
 
     // Cálculos de prioridade (Onde Circular)
-    // Alta prioridade: Tem votos (>100), mas tem 0 diárias (presença fraca)
+    // Alta prioridade: Tem votos (>100), mas tem poucas diárias proporcionais
     const prioridadeCirculacaoSC = [...analyticsSC]
       .filter(r => r.votos > 100)
       .sort((a, b) => (b.votos / (a.diarias + 1)) - (a.votos / (b.diarias + 1))); 
@@ -321,8 +344,8 @@ export default function App() {
     const mainColor = isEstado ? COLORS.mustard : COLORS.teal;
     const idx = findIndices(headers);
 
-    // Identificar colunas para sumarização nos Cards
-    let totaisEmendas = (row) => idx.emendas.reduce((acc, curr) => acc + (parseSortValue(row[curr]) || 0), 0);
+    // Identificar colunas para sumarização nos Cards (usando o strict)
+    let totaisEmendas = (row) => idx.emendas.reduce((acc, curr) => acc + parseNumberStrict(row[curr]), 0);
 
     const SortIcon = ({ colIdx }) => {
       const conf = sortConfig[tabName];
@@ -338,9 +361,9 @@ export default function App() {
             const titulo = row[idx.cidade];
             if (!titulo?.trim()) return null;
 
-            const votos = row[idx.votos] ? parseSortValue(row[idx.votos]) : 0;
+            const votos = row[idx.votos] ? parseNumberStrict(row[idx.votos]) : 0;
             const emendas = totaisEmendas(row);
-            const diarias = idx.diarias > -1 ? parseSortValue(row[idx.diarias]) : 0;
+            const diarias = idx.diarias > -1 ? parseNumberStrict(row[idx.diarias]) : 0;
 
             return (
               <div key={i} className="border-4 border-black bg-white flex flex-col shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform relative">
@@ -404,8 +427,7 @@ export default function App() {
       );
     }
 
-    // Visão em Tabela (Mais limpa, apenas colunas essenciais, o resto na ficha)
-    // Para limpar a tabela, mostramos apenas: Cidade, Região, Votos, Status, Diárias, Total Emendas
+    // Visão em Tabela
     return (
       <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col animate-fade-in relative z-0 mb-10">
         <div className="overflow-auto max-h-[70vh]">
@@ -414,7 +436,7 @@ export default function App() {
               <tr>
                 {headers.map((h, i) => {
                   const shortH = getShortHeader(h);
-                  // Ocultar colunas prolixas na tabela para "limpar a interface" (elas ficam no Modal)
+                  // Ocultar colunas prolixas na tabela para "limpar a interface"
                   if (![idx.cidade, idx.regiao, idx.votos, idx.status, idx.diarias, idx.articulador].includes(i) && !idx.emendas.includes(i)) {
                     return null; 
                   }
@@ -533,8 +555,6 @@ export default function App() {
                  const displayVal = (hStr.includes('LOA') || hStr.includes('VALOR') || hStr.includes('EMENDA')) ? formatCurrency(val) : 
                                     (hStr.includes('%') || hStr.includes('ROI')) ? formatPercentage(val) : (val || '-');
                  
-                 // Skip main fields already shown at top to avoid redundancy, except if we want full raw view. 
-                 // Let's show all for completeness in the "Ficha"
                  if (i === idx.status) return null; // Already editable above
 
                  return (

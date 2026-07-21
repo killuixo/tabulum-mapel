@@ -94,8 +94,10 @@ const findIndices = (headers) => {
   const safeH = headers.map(h => String(h).trim().toLowerCase());
   
   const indices = {
-    cidade: safeH.findIndex(h => h === 'cidade' || h === 'município' || h === 'local'),
-    regiao: safeH.findIndex(h => h.includes('região') || h.includes('bairro replan') || h.includes('distrito')),
+    cidade: safeH.findIndex(h => h === 'cidade' || h === 'município' || h === 'local' || h === 'local de votação'),
+    regiao: safeH.findIndex(h => h === 'região' || h.includes('macrorregião')),
+    bairro: safeH.findIndex(h => h === 'bairro replan' || h === 'bairro'),
+    distrito: safeH.findIndex(h => h === 'distrito'),
     votos: safeH.findIndex(h => h.includes('2022') || h.includes('votos') || h === 'voto'),
     diarias: safeH.findIndex(h => h.includes('diária')),
     status: safeH.findIndex(h => h.includes('círculos') || h.includes('estratégia territorial')),
@@ -111,6 +113,55 @@ const findIndices = (headers) => {
   });
 
   return indices;
+};
+
+// --- NOVO COMPONENTE DE LISTA ORDENÁVEL ---
+const SortableCard = ({ title, subtitle, icon, data, columns, color }) => {
+  const [sortKey, setSortKey] = useState(columns.find(c => c.defaultSort)?.key || columns[0].key);
+  const [sortDesc, setSortDesc] = useState(true);
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDesc(!sortDesc);
+    else { setSortKey(key); setSortDesc(true); }
+  };
+
+  const sortedData = [...data].sort((a, b) => {
+    let valA = a[sortKey];
+    let valB = b[sortKey];
+    if (typeof valA === 'string') {
+      return sortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+    }
+    return sortDesc ? valB - valA : valA - valB;
+  });
+
+  return (
+    <div className="border-4 border-black bg-white flex flex-col h-[400px] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+      <div className="p-3 border-b-4 border-black text-white flex justify-between items-end shrink-0" style={{ backgroundColor: color }}>
+        <h3 className="font-black text-sm uppercase tracking-wider leading-tight flex items-center gap-2">{icon} {title}</h3>
+      </div>
+      {subtitle && <div className="px-3 py-2 bg-gray-100 border-b-2 border-black text-[10px] font-bold uppercase text-gray-600 shrink-0">{subtitle}</div>}
+      <div className="flex bg-[#111] text-white text-[10px] font-black uppercase tracking-widest shrink-0 border-b-2 border-black">
+        {columns.map(col => (
+          <div key={col.key} onClick={() => handleSort(col.key)} className={`p-2 cursor-pointer hover:bg-gray-800 transition-colors ${col.className || 'flex-1'} flex items-center select-none`}>
+            {col.label}
+            {sortKey === col.key && <span className="text-[#e2b714] ml-1">{sortDesc ? '↓' : '↑'}</span>}
+          </div>
+        ))}
+      </div>
+      <div className="flex-1 overflow-y-auto bg-[#fcfcfc]">
+        {sortedData.map((item, idx) => (
+          <div key={idx} className="flex text-xs font-bold uppercase border-b-2 border-gray-100 hover:bg-gray-100 transition-colors items-center">
+            {columns.map(col => (
+              <div key={col.key} className={`p-2 truncate ${col.className || 'flex-1'} ${col.valueClass ? col.valueClass(item) : ''}`} title={item[col.key]}>
+                {col.format ? col.format(item[col.key]) : item[col.key]}
+              </div>
+            ))}
+          </div>
+        ))}
+        {sortedData.length === 0 && <div className="text-xs text-gray-400 font-bold uppercase text-center py-4">Sem dados correspondentes</div>}
+      </div>
+    </div>
+  );
 };
 
 // --- COMPONENTE PRINCIPAL ---
@@ -220,37 +271,20 @@ export default function App() {
       const nome = row[idx.cidade] ? String(row[idx.cidade]).trim() : 'Desconhecido';
       if (!nome || nome === 'Desconhecido') return;
 
-      // Utilizando parseNumberStrict para matemática precisa
       const votos = idx.votos > -1 ? parseNumberStrict(row[idx.votos]) : 0;
       let emendas = 0;
       idx.emendas.forEach(i => { emendas += parseNumberStrict(row[i]); });
       const diarias = idx.diarias > -1 ? parseNumberStrict(row[idx.diarias]) : 0;
       
-      registros.push({ nome, votos, emendas, diarias });
+      const bairro = idx.bairro > -1 ? String(row[idx.bairro] || '').trim() : '';
+      const distrito = idx.distrito > -1 ? String(row[idx.distrito] || '').trim() : '';
+      const regiao = idx.regiao > -1 ? String(row[idx.regiao] || '').trim() : '';
+
+      registros.push({ nome, votos, emendas, diarias, bairro, distrito, regiao });
     });
 
     return registros;
   };
-
-  const renderRankList = (title, data, metric, color, isCurrency = false, subtitle = "") => (
-    <div className="border-4 border-black bg-white flex flex-col h-full shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-      <div className="p-3 border-b-4 border-black text-white flex justify-between items-end" style={{ backgroundColor: color }}>
-        <h3 className="font-black text-sm uppercase tracking-wider leading-tight">{title}</h3>
-      </div>
-      {subtitle && <div className="px-3 py-2 bg-gray-100 border-b-2 border-black text-[10px] font-bold uppercase text-gray-600">{subtitle}</div>}
-      <div className="p-3 flex flex-col gap-2 overflow-y-auto max-h-[300px]">
-        {data.slice(0, 10).map((item, idx) => (
-          <div key={idx} className="flex items-center justify-between border-b-2 border-gray-100 pb-1 last:border-0">
-            <span className="font-bold text-xs uppercase truncate pr-2 w-2/3">{idx + 1}. {item.nome}</span>
-            <span className="font-black text-xs whitespace-nowrap" style={{ color: color }}>
-              {isCurrency ? formatCurrency(item[metric]) : item[metric].toLocaleString('pt-BR')}
-            </span>
-          </div>
-        ))}
-        {data.length === 0 && <div className="text-xs text-gray-400 font-bold uppercase text-center py-4">Sem dados suficientes</div>}
-      </div>
-    </div>
-  );
 
   const renderDashboard = () => {
     if (estadoData.length < 2 && capitalData.length < 2) return null;
@@ -258,12 +292,18 @@ export default function App() {
     const analyticsSC = processAnalytics(estadoData, 'ESTADO').filter(r => r.nome.toUpperCase() !== 'FLORIANÓPOLIS');
     const analyticsCap = processAnalytics(capitalData, 'CAPITAL');
 
-    // Cálculos de prioridade (Onde Circular)
-    // Alta prioridade: Tem votos (>100), mas tem poucas diárias proporcionais
-    const prioridadeCirculacaoSC = [...analyticsSC]
-      .filter(r => r.votos > 100)
-      .sort((a, b) => (b.votos / (a.diarias + 1)) - (a.votos / (b.diarias + 1))); 
-      // Ratio: Votos por Diária (quanto mais alto, mais "rende" ir lá, ou mais "abandonado" está)
+    // Configurações das Colunas para os Cards Ordenáveis
+    const colDensidade = [
+      { key: 'nome', label: 'Município', className: 'w-1/2' },
+      { key: 'votos', label: 'Votos', className: 'w-1/4 text-right', valueClass: () => 'text-[#c32148]', format: (v) => v.toLocaleString(), defaultSort: true },
+      { key: 'diarias', label: 'Diárias', className: 'w-1/4 text-right', format: (v) => v }
+    ];
+
+    const colEmendas = [
+      { key: 'nome', label: 'Município', className: 'w-2/5' },
+      { key: 'emendas', label: 'Emendas', className: 'w-1/3 text-right', valueClass: () => 'text-[#008080]', format: formatCurrency, defaultSort: true },
+      { key: 'votos', label: 'Votos', className: 'w-4/12 text-right', valueClass: () => 'text-[#c32148]', format: (v) => v.toLocaleString() }
+    ];
 
     return (
       <div className="flex flex-col gap-10 animate-fade-in pb-12">
@@ -275,38 +315,28 @@ export default function App() {
           </div>
           <div className="text-right">
             <div className="text-[10px] uppercase font-bold text-[#e2b714]">Status de Dados</div>
-            <div className="text-sm font-black uppercase">SC: {estadoData.length-1} Linhas | CAP: {capitalData.length-1} Linhas</div>
+            <div className="text-sm font-black uppercase">SC: {estadoData.length > 1 ? estadoData.length-1 : 0} Linhas | CAP: {capitalData.length > 1 ? capitalData.length-1 : 0} Linhas</div>
           </div>
         </div>
 
-        {/* PERGUNTAS CHAVE DOS ASSESSORES */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          
-          {/* 1. Onde Circular (Recomendação do Analista) */}
-          <div className="col-span-1 lg:col-span-2 border-4 border-black bg-[#e2b714] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex flex-col">
-            <div className="p-4 border-b-4 border-black bg-[#111] text-white">
-              <h3 className="font-black text-lg uppercase tracking-widest flex items-center gap-2">🎯 Onde Marquito deve circular?</h3>
-            </div>
-            <div className="p-4 bg-white flex-1 text-black text-xs font-bold uppercase flex flex-col gap-3">
-              <p className="text-[#008080] border-b-2 border-gray-200 pb-2">Top 5 Locais com alta densidade eleitoral vs. baixa presença recente (Diárias).</p>
-              {prioridadeCirculacaoSC.slice(0, 5).map((c, i) => (
-                <div key={i} className="flex justify-between items-center border-l-4 border-[#c32148] pl-3 py-1 bg-gray-50">
-                  <span className="truncate pr-2">{i+1}. {c.nome}</span>
-                  <div className="text-right shrink-0">
-                    <span className="block text-[#c32148]">{c.votos.toLocaleString()} Votos</span>
-                    <span className="block text-gray-500 text-[10px]">{c.diarias} Diárias reg.</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 2. Onde teve emendas */}
-          {renderRankList("💰 Maiores Emendas (SC)", [...analyticsSC].sort((a, b) => b.emendas - a.emendas).filter(r => r.emendas > 0), "emendas", COLORS.teal, true, "Municípios que mais receberam recursos")}
-
-          {/* 3. Onde há diárias */}
-          {renderRankList("🚗 Mapa de Diárias (SC)", [...analyticsSC].sort((a, b) => b.diarias - a.diarias).filter(r => r.diarias > 0), "diarias", COLORS.black, false, "Presença física registrada")}
-
+        {/* GRÁFICOS ACIONÁVEIS (CARDS INTERATIVOS) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SortableCard 
+            title="Top Locais com Alta Densidade vs. Baixa Presença" 
+            subtitle="Todos os municípios com diárias registradas"
+            icon="🎯" 
+            color={COLORS.black}
+            data={analyticsSC.filter(r => r.diarias > 0)} 
+            columns={colDensidade} 
+          />
+          <SortableCard 
+            title="Emendas vs. Densidade" 
+            subtitle="Todos os municípios que receberam recursos"
+            icon="💰" 
+            color={COLORS.teal}
+            data={analyticsSC.filter(r => r.emendas > 0)} 
+            columns={colEmendas} 
+          />
         </div>
 
         {/* CONSOLIDAÇÃO DE VOTOS */}
@@ -314,12 +344,14 @@ export default function App() {
           <div className="p-4 border-b-4 border-black bg-[#c32148] text-white">
             <h3 className="font-black text-lg uppercase tracking-widest flex items-center gap-2">🗳️ Fortaleza Eleitoral (Onde tem Votos)</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 p-6 gap-8 bg-[#fcfcfc]">
+          
+          <div className="flex flex-col p-6 gap-8 bg-[#fcfcfc]">
+            {/* ESTADO */}
             <div>
                <h4 className="font-black text-sm uppercase text-[#111] mb-4 border-b-2 border-black pb-1">Top 10 - Estado (SC)</h4>
-               <div className="flex flex-col gap-2">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
                  {[...analyticsSC].sort((a, b) => b.votos - a.votos).slice(0,10).map((c, i) => (
-                   <div key={i} className="flex items-center gap-3">
+                   <div key={i} className="flex items-center gap-3 border-b border-gray-200 pb-1">
                      <span className="font-black text-xs text-gray-400 w-5">{i+1}.</span>
                      <span className="font-bold text-xs uppercase flex-1 truncate">{c.nome}</span>
                      <span className="font-black text-xs text-[#c32148]">{c.votos.toLocaleString()} V</span>
@@ -327,16 +359,35 @@ export default function App() {
                  ))}
                </div>
             </div>
-            <div>
+
+            {/* CAPITAL */}
+            <div className="mt-4">
                <h4 className="font-black text-sm uppercase text-[#111] mb-4 border-b-2 border-black pb-1">Top 10 - Capital (Bairros/Locais)</h4>
-               <div className="flex flex-col gap-2">
-                 {[...analyticsCap].sort((a, b) => b.votos - a.votos).slice(0,10).map((c, i) => (
-                   <div key={i} className="flex items-center gap-3">
-                     <span className="font-black text-xs text-gray-400 w-5">{i+1}.</span>
-                     <span className="font-bold text-xs uppercase flex-1 truncate">{c.nome}</span>
-                     <span className="font-black text-xs text-[#c32148]">{c.votos.toLocaleString()} V</span>
-                   </div>
-                 ))}
+               <div className="overflow-x-auto border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                 <table className="w-full text-left text-[10px] sm:text-xs font-bold uppercase border-collapse bg-white">
+                   <thead className="bg-[#111] text-white">
+                     <tr>
+                       <th className="p-2 sm:p-3 border-r-2 border-black w-8 text-center cursor-default">#</th>
+                       <th className="p-2 sm:p-3 border-r-2 border-black min-w-[180px] cursor-default">Local / Escola</th>
+                       <th className="p-2 sm:p-3 border-r-2 border-black min-w-[120px] cursor-default">Bairro</th>
+                       <th className="p-2 sm:p-3 border-r-2 border-black min-w-[120px] cursor-default">Distrito</th>
+                       <th className="p-2 sm:p-3 border-r-2 border-black min-w-[120px] cursor-default">Região</th>
+                       <th className="p-2 sm:p-3 text-right cursor-default text-[#c32148]">Votos</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {[...analyticsCap].sort((a, b) => b.votos - a.votos).slice(0,10).map((c, i) => (
+                       <tr key={i} className="border-b-2 border-gray-200 hover:bg-gray-100 transition-colors">
+                         <td className="p-2 sm:p-3 border-r-2 border-black text-gray-500 text-center">{i+1}</td>
+                         <td className="p-2 sm:p-3 border-r-2 border-black truncate max-w-[220px]" title={c.nome}>{c.nome}</td>
+                         <td className="p-2 sm:p-3 border-r-2 border-black truncate max-w-[140px]" title={c.bairro}>{c.bairro || '-'}</td>
+                         <td className="p-2 sm:p-3 border-r-2 border-black truncate max-w-[140px]" title={c.distrito}>{c.distrito || '-'}</td>
+                         <td className="p-2 sm:p-3 border-r-2 border-black truncate max-w-[140px]" title={c.regiao}>{c.regiao || '-'}</td>
+                         <td className="p-2 sm:p-3 text-right font-black text-[#c32148] whitespace-nowrap">{c.votos.toLocaleString()} V</td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
                </div>
             </div>
           </div>

@@ -10,12 +10,18 @@ const COLORS = {
 };
 const PIE_COLORS = [COLORS.mustard, COLORS.teal, COLORS.crimson, '#555555', '#999999', '#333333', '#dddddd'];
 
-// A injeção dinâmica no Vite às vezes falha no build da Vercel. 
-// Definimos o fallback explícito usando a URL do seu print para garantir que sempre funcione.
-const fallbackUrl = "https://script.google.com/macros/s/AKfycbwZwDGkjRLBM-m5_HuE1UUVEsCTXchPkD5FncPwd6Sq8LLVEhE7ZW4_gs_SS5epjM8b/exec";
-const API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) 
-  ? import.meta.env.VITE_SCRIPT_URL 
-  : fallbackUrl;
+// Busca a URL da API estritamente das variáveis de ambiente da Vercel
+const getApiUrl = () => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) {
+      return import.meta.env.VITE_SCRIPT_URL;
+    }
+  } catch (e) {
+    console.warn("Ambiente não detectado perfeitamente.");
+  }
+  return ""; 
+};
+const API_URL = getApiUrl();
 
 const Icons = {
   ChevronDown: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>,
@@ -45,28 +51,11 @@ const parseNumberStrict = (val) => {
   if (typeof val === 'number') return val;
   let str = String(val).trim();
   if (str === '-' || str === '') return 0;
-  
-  // Remove R$ e espaços
-  str = str.replace(/[R$\s]/gi, '');
-  
-  // Trata padrão numérico brasileiro (vírgula como decimal)
-  if (str.includes(',')) {
-    str = str.replace(/\./g, '').replace(',', '.');
-  } else {
-    // Se tiver ponto atuando como separador de milhar (ex: 1.250)
-    if (/\.\d{3}$/.test(str) && (str.match(/\./g) || []).length === 1) {
-      str = str.replace(/\./g, '');
-    }
-  }
-  
+  str = str.replace(/[R$\s]/g, '');
+  if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
+  else if (/\.\d{3}$/.test(str) || str.split('.').length > 2) str = str.replace(/\./g, '');
   const parsed = parseFloat(str);
   return isNaN(parsed) ? 0 : parsed;
-};
-
-const formatCurrency = (val) => {
-  const num = parseFloat(val);
-  if (isNaN(num)) return "R$ 0,00";
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
 };
 
 const exportToCSV = (data, filename) => {
@@ -97,11 +86,9 @@ const NativeBarChart = ({ data }) => {
         const heightPct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
         return (
           <div key={idx} className="flex flex-col items-center flex-1 min-w-[40px] group relative h-full justify-end">
-            {/* Tooltip Hover */}
             <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-[#111] text-white text-[10px] font-black uppercase px-2 py-1 whitespace-nowrap z-10 pointer-events-none transition-opacity border-2 border-black">
               {item.name}: {item.value.toLocaleString()}
             </div>
-            {/* Bar */}
             <div className="w-full bg-[#008080] border-2 border-black group-hover:bg-[#c32148] transition-colors relative" 
                  style={{ height: `${heightPct}%`, minHeight: '4px' }}>
             </div>
@@ -251,7 +238,6 @@ const BairroDetail = ({ bairro, municipio, data, onBack }) => {
     { key: 'secao', label: 'Seção', render: (val) => <span className="text-gray-600">{val}</span> },
     { key: 'votos', label: 'Votos', align: 'right', render: (val) => <span className="font-black text-[#c32148] text-lg">{val}</span> }
   ];
-
   const totalVotosBairro = data.reduce((acc, curr) => acc + (parseInt(curr.votos) || 0), 0);
 
   return (
@@ -271,7 +257,6 @@ const BairroDetail = ({ bairro, municipio, data, onBack }) => {
             <p className="text-2xl font-black text-[#c32148]">{totalVotosBairro.toLocaleString()} VOTOS</p>
           </div>
         </div>
-        
         <div className="p-6">
           <h3 className="font-black uppercase text-lg mb-4 text-[#111] border-b-4 border-black pb-2 inline-block">Locais de Votação (Ordenáveis)</h3>
           <SortableTable data={data} columns={columns} />
@@ -283,8 +268,6 @@ const BairroDetail = ({ bairro, municipio, data, onBack }) => {
 
 const MunicipioDetail = ({ municipio, data, onBack, onBairroClick }) => {
   const totalVotos = data.reduce((acc, curr) => acc + (parseInt(curr.votos) || 0), 0);
-  const totalEmendas = data.reduce((acc, curr) => acc + parseNumberStrict(curr.emendas), 0);
-  const emendasList = data.filter(d => parseNumberStrict(d.emendas) > 0);
 
   const bairrosMap = {};
   data.forEach(d => {
@@ -310,44 +293,16 @@ const MunicipioDetail = ({ municipio, data, onBack, onBairroClick }) => {
         <Icons.ArrowLeft /> <span className="ml-2">Voltar ao Mapa/Lista</span>
       </button>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="lg:col-span-2 border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none">
-          <div className="bg-[#e2b714] p-6 border-b-4 border-black">
-            <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-white bg-[#111] px-2 py-1 inline-block border-2 border-black">Ficha Estratégica</p>
-            <h2 className="text-4xl md:text-5xl font-black uppercase text-[#111]">{municipio}</h2>
-          </div>
-          
-          <div className="flex flex-col sm:flex-row p-6 gap-6 flex-1 bg-[#f4f4f4]">
-            <div className="flex-1 border-4 border-black bg-white p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-              <p className="text-xs font-black uppercase text-gray-500 mb-2 border-b-2 border-gray-200 pb-1">Votos Consolidados</p>
-              <p className="text-4xl font-black text-[#c32148]">{totalVotos.toLocaleString('pt-BR')}</p>
-            </div>
-            <div className="flex-1 border-4 border-black bg-white p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-              <p className="text-xs font-black uppercase text-gray-500 mb-2 border-b-2 border-gray-200 pb-1">Total Emendas (R$)</p>
-              <p className="text-3xl font-black text-[#008080]">
-                {formatCurrency(totalEmendas)}
-              </p>
-            </div>
-          </div>
+      <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none mb-8">
+        <div className="bg-[#e2b714] p-6 border-b-4 border-black">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-white bg-[#111] px-2 py-1 inline-block border-2 border-black">Ficha Estratégica</p>
+          <h2 className="text-4xl md:text-5xl font-black uppercase text-[#111]">{municipio}</h2>
         </div>
-
-        <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none">
-          <div className="bg-[#111] text-white p-4 border-b-4 border-black print:bg-gray-200 print:text-black">
-            <h3 className="font-black uppercase tracking-wider">💰 Histórico de Emendas</h3>
-          </div>
-          <div className="p-4 flex-1 overflow-y-auto max-h-[300px] bg-[#f4f4f4]">
-            {emendasList.length === 0 ? (
-              <p className="text-gray-500 text-sm font-bold uppercase text-center mt-10">Nenhuma emenda registrada.</p>
-            ) : (
-              <ul className="space-y-4">
-                {emendasList.map((em, idx) => (
-                  <li key={idx} className="border-l-4 border-[#008080] pl-3 bg-white p-2 border-2 border-transparent hover:border-black transition">
-                    <p className="font-black text-[10px] uppercase text-gray-800 mb-1 leading-tight">{em.bairro || 'Destinação Geral'}</p>
-                    <p className="text-[#008080] font-black text-sm">{formatCurrency(em.emendas)}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
+        
+        <div className="p-6 bg-[#f4f4f4]">
+          <div className="border-4 border-black bg-white p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] inline-block">
+            <p className="text-xs font-black uppercase text-gray-500 mb-2 border-b-2 border-gray-200 pb-1">Votos Consolidados</p>
+            <p className="text-4xl font-black text-[#c32148]">{totalVotos.toLocaleString('pt-BR')}</p>
           </div>
         </div>
       </div>
@@ -375,8 +330,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  const [activeTab, setActiveTab] = useState('list'); // list, dashboard, map
-  const [viewMode, setViewMode] = useState('list'); // list, cards
+  const [activeTab, setActiveTab] = useState('list');
+  const [viewMode, setViewMode] = useState('list');
   const [selectedMunicipio, setSelectedMunicipio] = useState(null);
   const [selectedBairro, setSelectedBairro] = useState(null);
   const [showZeroVotes, setShowZeroVotes] = useState(false);
@@ -384,80 +339,61 @@ export default function App() {
   
   const [filters, setFilters] = useState({ regioes: [], municipios: [] });
 
-  // Interpretador Universal Inteligente de Planilhas Google via JSON
+  // Interpretador Resiliente de Planilhas - Baseado estritamente no CSV do usuário
   const parseJSONData = (json) => {
     let parsedRows = [];
-    // Busca a matriz de dados em qualquer possível formato de retorno
-    const targetArray = json.estado || json.votos || json.dados || json.capital || json.data || json;
+    const targetArray = json.estado || json.votos || json.dados || json.capital || json;
     
-    if (!Array.isArray(targetArray)) {
-      throw new Error("Formato de JSON inválido ou vazio. É necessário um array contendo os dados da planilha.");
+    if (!Array.isArray(targetArray) || targetArray.length < 2) {
+      throw new Error("Formato de JSON inválido ou vazio.");
     }
 
-    if (targetArray.length === 0) return [];
+    // Função que remove acentos, espaços desnecessários e deixa maiúsculo para leitura infalível
+    const normalizeKey = (k) => String(k).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
-    // Função auxiliar super flexível para extrair valores baseados em palavras-chave das colunas
-    const findVal = (rowObj, keywords) => {
-      const keys = Object.keys(rowObj);
-      for (let kw of keywords) {
-        const foundKey = keys.find(k => k.toLowerCase().trim().includes(kw));
-        if (foundKey) return rowObj[foundKey];
-      }
-      return null;
-    };
-
-    // Se for Array de Arrays (Padrão Sheets API RAW)
     if (Array.isArray(targetArray[0])) {
-      if (targetArray.length < 2) return [];
-      const headers = targetArray[0].map(h => String(h).trim().toLowerCase());
+      const headers = targetArray[0].map(normalizeKey);
       
-      const getIdx = (kws) => {
-        for(let kw of kws) {
-          const idx = headers.findIndex(h => h.includes(kw));
-          if (idx > -1) return idx;
-        }
-        return -1;
+      const idx = {
+        municipio: headers.findIndex(h => h === 'MUNICIPIO'),
+        regiao: headers.findIndex(h => h === 'REGIAO EM SC'),
+        bairro: headers.findIndex(h => h === 'BAIRRO'),
+        local: headers.findIndex(h => h === 'LOCAL DE VOTACAO'),
+        zona: headers.findIndex(h => h === 'ZONA'),
+        secao: headers.findIndex(h => h === 'SECAO'),
+        votos: headers.findIndex(h => h === 'QUANTIDADE DE VOTOS')
       };
 
-      const idx = {
-        municipio: getIdx(['munic', 'cidade', 'nm_mun']),
-        regiao: getIdx(['regi', 'macro', 'meso']),
-        bairro: getIdx(['bairro', 'nm_bairro', 'localidade']),
-        local: getIdx(['local', 'escola', 'coleg']),
-        zona: getIdx(['zona']),
-        secao: getIdx(['seç', 'sec']),
-        votos: getIdx(['voto', 'qt_', 'qtd', 'total']),
-        emendas: getIdx(['emenda', 'valor', 'loa', 'r$'])
-      };
+      if (idx.municipio === -1 || idx.votos === -1) {
+        throw new Error("As colunas exatas 'MUNICÍPIO' e/ou 'QUANTIDADE DE VOTOS' não foram encontradas na planilha.");
+      }
 
       parsedRows = targetArray.slice(1).map(row => ({
-        municipio: idx.municipio > -1 ? row[idx.municipio] : null,
-        regiao: idx.regiao > -1 ? row[idx.regiao] : 'Sem Região',
-        bairro: idx.bairro > -1 ? row[idx.bairro] : '',
-        local: idx.local > -1 ? row[idx.local] : '',
-        zona: idx.zona > -1 ? row[idx.zona] : '',
-        secao: idx.secao > -1 ? row[idx.secao] : '',
-        votos: idx.votos > -1 ? parseNumberStrict(row[idx.votos]) : 0,
-        emendas: idx.emendas > -1 ? parseNumberStrict(row[idx.emendas]) : 0,
+        municipio: row[idx.municipio] || '',
+        regiao: idx.regiao > -1 ? row[idx.regiao] || 'Sem Região' : 'Sem Região',
+        bairro: idx.bairro > -1 ? row[idx.bairro] || '' : '',
+        local: idx.local > -1 ? row[idx.local] || '' : '',
+        zona: idx.zona > -1 ? row[idx.zona] || '' : '',
+        secao: idx.secao > -1 ? row[idx.secao] || '' : '',
+        votos: idx.votos > -1 ? parseNumberStrict(row[idx.votos]) : 0
       }));
     } else {
-       // É Array de Objetos (JSON Mapeado gerado pela API / App Script)
        parsedRows = targetArray.map(row => {
-          const mun = findVal(row, ['munic', 'cidade', 'nm_mun']);
+          const normalizedRow = {};
+          Object.keys(row).forEach(k => { normalizedRow[normalizeKey(k)] = row[k]; });
+
           return {
-             municipio: mun,
-             regiao: findVal(row, ['regi', 'macro', 'meso']) || 'Sem Região',
-             bairro: findVal(row, ['bairro', 'nm_bairro', 'localidade']) || '',
-             local: findVal(row, ['local', 'escola', 'coleg']) || '',
-             zona: findVal(row, ['zona']) || '',
-             secao: findVal(row, ['seç', 'sec']) || '',
-             votos: parseNumberStrict(findVal(row, ['voto', 'qt_', 'qtd', 'total'])),
-             emendas: parseNumberStrict(findVal(row, ['emenda', 'valor', 'loa', 'r$']))
+             municipio: normalizedRow['MUNICIPIO'] || '',
+             regiao: normalizedRow['REGIAO EM SC'] || 'Sem Região',
+             bairro: normalizedRow['BAIRRO'] || '',
+             local: normalizedRow['LOCAL DE VOTACAO'] || '',
+             zona: normalizedRow['ZONA'] || '',
+             secao: normalizedRow['SECAO'] || '',
+             votos: parseNumberStrict(normalizedRow['QUANTIDADE DE VOTOS'] || 0)
           };
        });
     }
 
-    // Filtra linhas inválidas ou de cabeçalhos vazios
     return parsedRows.filter(r => r.municipio && String(r.municipio).trim() !== "");
   };
 
@@ -467,40 +403,23 @@ export default function App() {
       setError(null);
       
       if (!API_URL) {
-        setError("A variável VITE_SCRIPT_URL não foi definida na Vercel. Adicione a URL da sua API para carregar os dados reais.");
+        setError("A variável VITE_SCRIPT_URL não foi definida na Vercel.");
         setLoading(false);
         return;
       }
 
       try {
-        const res = await fetch(API_URL, { redirect: 'follow' });
-        if (!res.ok) {
-           if (res.status === 404) {
-             throw new Error("ERRO 404: Link da API não encontrado. Verifique a URL gerada.");
-           }
-           throw new Error(`Erro HTTP: ${res.status}`);
-        }
-        
-        // Verifica se o Google redirecionou para uma página HTML de login (erro de permissão)
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.indexOf("text/html") !== -1) {
-           throw new Error("Erro de Permissão: O Google exigiu login. Refaça a implantação no Apps Script marcando o acesso para 'Qualquer pessoa'.");
-        }
-
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error(`ERRO HTTP ${res.status}: LINK DA API NÃO ENCONTRADO. VERIFIQUE A URL GERADA.`);
         const json = await res.json();
-
-        // Tratamento explícito para erros devolvidos pelo Apps Script (try/catch no codigo.gs)
-        if (json.status === "error") {
-           throw new Error(`Erro interno da Planilha: ${json.message}`);
-        }
         
         const cleanData = parseJSONData(json);
-        if (cleanData.length === 0) throw new Error("A base de dados foi processada, mas retornou vazia. Verifique os nomes das colunas na planilha.");
+        if (cleanData.length === 0) throw new Error("A base de dados retornou vazia.");
 
         setRawData(cleanData);
       } catch (e) {
         console.error("Erro de Integração:", e);
-        setError(`Falha ao conectar ou processar os dados: ${e.message}`);
+        setError(`FALHA AO CONECTAR OU PROCESSAR OS DADOS: ${e.message}`);
       } finally {
         setLoading(false);
       }
@@ -529,12 +448,7 @@ export default function App() {
       if(munName !== 'Desconhecido') munsSet.add(munName);
 
       if (!mapMuns[munName]) {
-        mapMuns[munName] = {
-          municipio: munName,
-          regiao: regName,
-          votosTotais: 0,
-          bairrosRaw: []
-        };
+        mapMuns[munName] = { municipio: munName, regiao: regName, votosTotais: 0, bairrosRaw: [] };
       }
       
       const votosNum = parseInt(d.votos) || 0;
@@ -568,20 +482,15 @@ export default function App() {
   const toggleFilter = (type, value) => {
     setFilters(prev => {
       const current = prev[type];
-      if (current.includes(value)) {
-        return { ...prev, [type]: current.filter(v => v !== value) };
-      } else {
-        return { ...prev, [type]: [...current, value] };
-      }
+      if (current.includes(value)) return { ...prev, [type]: current.filter(v => v !== value) };
+      return { ...prev, [type]: [...current, value] };
     });
   };
 
   const clearFilters = () => setFilters({ regioes: [], municipios: [] });
 
   const renderBairrosExpand = (row) => {
-    if (row.bairrosRaw.length === 0) {
-      return <p className="text-xs font-bold text-gray-500 uppercase">Nenhum bairro com >1 voto especificado.</p>;
-    }
+    if (row.bairrosRaw.length === 0) return <p className="text-xs font-bold text-gray-500 uppercase">Nenhum bairro com >1 voto especificado.</p>;
 
     const bairrosAgrupados = {};
     row.bairrosRaw.forEach(b => {
@@ -595,9 +504,7 @@ export default function App() {
         <h4 className="text-[10px] font-black uppercase text-[#111] mb-3 bg-[#e2b714] inline-block px-2 py-1 border-2 border-black">Bairros com Votos</h4>
         <div className="flex flex-wrap gap-2">
           {bList.sort((a,b) => b.votos - a.votos).map(b => (
-            <button 
-              key={b.bairro}
-              onClick={(e) => { e.stopPropagation(); setSelectedMunicipio(row.municipio); setSelectedBairro(b.bairro); }}
+            <button key={b.bairro} onClick={(e) => { e.stopPropagation(); setSelectedMunicipio(row.municipio); setSelectedBairro(b.bairro); }}
               className="bg-white border-2 border-black px-3 py-1 text-xs font-bold uppercase hover:bg-[#111] hover:text-white transition shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
               {b.bairro} <span className="font-black ml-1 text-[#c32148] bg-gray-100 px-1 border border-gray-300 rounded-none group-hover:bg-gray-800">{b.votos}</span>
             </button>
@@ -609,10 +516,7 @@ export default function App() {
 
   const munsColumns = [
     { key: 'municipio', label: 'Município', render: (val) => (
-      <span className="font-black uppercase text-base hover:text-[#008080] underline-offset-4 decoration-2" 
-            onClick={(e) => { e.stopPropagation(); setSelectedMunicipio(val); }}>
-        {val}
-      </span>
+      <span className="font-black uppercase text-base hover:text-[#008080] underline-offset-4 decoration-2" onClick={(e) => { e.stopPropagation(); setSelectedMunicipio(val); }}>{val}</span>
     )},
     { key: 'regiao', label: 'Região', render: (val) => <span className="text-xs uppercase text-gray-600">{val}</span> },
     { key: 'votosTotais', label: 'Votos', align: 'right', render: (val) => <span className="font-black text-[#c32148] text-xl">{val.toLocaleString('pt-BR')}</span> }
@@ -621,9 +525,7 @@ export default function App() {
   const renderCards = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-2">
       {munsComVoto.map((m, idx) => (
-        <div key={idx} 
-             onClick={() => setSelectedMunicipio(m.municipio)}
-             className="border-4 border-black bg-white cursor-pointer hover:-translate-y-1 transition-transform relative flex flex-col shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] group">
+        <div key={idx} onClick={() => setSelectedMunicipio(m.municipio)} className="border-4 border-black bg-white cursor-pointer hover:-translate-y-1 transition-transform relative flex flex-col shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] group">
           <div className="h-4 w-full bg-[#e2b714] border-b-4 border-black group-hover:bg-[#008080] transition-colors"></div>
           <div className="p-5 flex-1 flex flex-col justify-between">
             <div>
@@ -643,47 +545,29 @@ export default function App() {
   const renderDashboard = () => (
     <div className="space-y-8 animate-[fadeIn_0.3s_ease-in-out] print:break-inside-avoid w-full">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Gráfico de Barras Nativo */}
         <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none print:border-2">
           <div className="bg-[#111] text-white p-4 border-b-4 border-black print:bg-gray-200 print:text-black">
-            <h3 className="font-black uppercase tracking-wider text-sm flex items-center"><Icons.Chart /> <span className="ml-2">Votos por Região (Nativo)</span></h3>
+            <h3 className="font-black uppercase tracking-wider text-sm flex items-center"><Icons.Chart /> <span className="ml-2">Votos por Região</span></h3>
           </div>
-          <div className="h-72 bg-[#f4f4f4] relative">
-            <NativeBarChart data={chartDataRegioes.slice(0, 8)} />
-          </div>
+          <div className="h-72 bg-[#f4f4f4] relative"><NativeBarChart data={chartDataRegioes.slice(0, 8)} /></div>
         </div>
-
-        {/* Gráfico de Pizza Nativo */}
         <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none print:border-2">
           <div className="bg-[#e2b714] text-[#111] p-4 border-b-4 border-black">
-            <h3 className="font-black uppercase tracking-wider text-sm flex items-center"><Icons.Chart /> <span className="ml-2">Proporção Regional (Nativo)</span></h3>
+            <h3 className="font-black uppercase tracking-wider text-sm flex items-center"><Icons.Chart /> <span className="ml-2">Proporção Regional</span></h3>
           </div>
-          <div className="h-72 bg-[#f4f4f4]">
-            <NativePieChart data={chartDataRegioes} />
-          </div>
+          <div className="h-72 bg-[#f4f4f4]"><NativePieChart data={chartDataRegioes} /></div>
         </div>
       </div>
-      
-      {/* Treemap Customizado (Nativo Flexbox) */}
       <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col print:shadow-none print:border-2">
         <div className="bg-[#c32148] text-white p-4 border-b-4 border-black">
-          <h3 className="font-black uppercase tracking-wider text-sm">Mapeamento em Árvore (Top 15 Municípios)</h3>
+          <h3 className="font-black uppercase tracking-wider text-sm">Top 15 Municípios</h3>
         </div>
         <div className="flex flex-wrap min-h-[250px] p-2 bg-[#111] gap-[2px]">
           {munsComVoto.slice(0, 15).map((m, i) => {
             const total = munsComVoto.slice(0,15).reduce((acc, curr) => acc + curr.votosTotais, 0);
-            const pct = (m.votosTotais / total) * 100;
-            const minSize = Math.max(pct, 8); 
+            const minSize = Math.max((m.votosTotais / total) * 100, 8); 
             return (
-              <div key={i} 
-                   onClick={() => setSelectedMunicipio(m.municipio)}
-                   className="flex-grow flex items-center justify-center p-2 text-white cursor-pointer hover:opacity-80 transition relative overflow-hidden"
-                   style={{
-                     backgroundColor: PIE_COLORS[i % PIE_COLORS.length],
-                     flexBasis: `${minSize}%`,
-                     minWidth: '120px'
-                   }}>
+              <div key={i} onClick={() => setSelectedMunicipio(m.municipio)} className="flex-grow flex items-center justify-center p-2 text-white cursor-pointer hover:opacity-80 transition relative overflow-hidden" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length], flexBasis: `${minSize}%`, minWidth: '120px' }}>
                 <div className="text-center z-10 p-1 bg-black/40 w-full backdrop-blur-sm border border-white/20">
                   <div className="font-black text-xs md:text-sm uppercase tracking-wider truncate">{m.municipio}</div>
                   <div className="text-xs font-bold">{m.votosTotais.toLocaleString()} v.</div>
@@ -692,27 +576,6 @@ export default function App() {
             );
           })}
         </div>
-      </div>
-    </div>
-  );
-
-  const renderMap = () => (
-    <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] h-[75vh] flex flex-col relative w-full animate-[fadeIn_0.3s_ease-in-out]">
-      <div className="bg-[#111] text-white p-3 border-b-4 border-black shrink-0 flex justify-between items-center">
-        <h3 className="font-black uppercase text-sm flex items-center"><Icons.Map /> <span className="ml-2">Google My Maps (Municípios)</span></h3>
-        <span className="text-[10px] font-bold text-[#e2b714] bg-black px-2 py-1 uppercase tracking-widest border border-[#e2b714]">Integração</span>
-      </div>
-      <div className="flex-1 w-full bg-[#f4f4f4] relative p-2">
-        <iframe 
-          title="Mapa de Votos"
-          src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d14197415.861787263!2d-60.106886801931596!3d-27.46914595240228!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x94dfb768e8203f19%3A0xc3b8a3eb4232bf36!2sSanta%20Catarina!5e0!3m2!1spt-BR!2sbr!4v1700000000000!5m2!1spt-BR!2sbr" 
-          width="100%" 
-          height="100%" 
-          className="border-2 border-black"
-          allowFullScreen="" 
-          loading="lazy" 
-          referrerPolicy="no-referrer-when-downgrade">
-        </iframe>
       </div>
     </div>
   );
@@ -727,7 +590,7 @@ export default function App() {
             <div className="w-6 h-6 bg-[#c32148] border-2 border-black animate-bounce" style={{animationDelay: '0.4s'}}></div>
           </div>
           <h1 className="text-2xl font-black text-[#111] tracking-widest uppercase">Tabulum</h1>
-          <p className="text-xs font-bold text-gray-500 uppercase mt-2">Buscando Dados na Nuvem...</p>
+          <p className="text-xs font-bold text-gray-500 uppercase mt-2">Buscando Dados...</p>
         </div>
       </div>
     );
@@ -737,29 +600,22 @@ export default function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f4f4f4] p-4">
         <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full flex flex-col">
-          <div className="bg-[#c32148] text-white p-6 border-b-4 border-black">
-            <h1 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3">⚠️ Base Não Localizada</h1>
-          </div>
+          <div className="bg-[#c32148] text-white p-6 border-b-4 border-black"><h1 className="text-2xl font-black uppercase tracking-widest flex items-center gap-3">⚠️ Base Não Localizada</h1></div>
           <div className="p-8 bg-[#f4f4f4]">
             <p className="font-bold text-base text-[#111] uppercase leading-relaxed mb-6">{error}</p>
-            
             <div className="bg-white p-5 border-2 border-black space-y-3">
               <h3 className="font-black uppercase text-[#c32148] border-b-2 border-gray-200 pb-2">O que fazer agora?</h3>
               <p className="text-xs font-bold text-gray-600 uppercase">1. Vá até o painel da sua Vercel (Settings &gt; Environment Variables).</p>
               <p className="text-xs font-bold text-gray-600 uppercase">2. Certifique-se de que a variável <span className="bg-gray-200 px-1 border border-black text-black">VITE_SCRIPT_URL</span> aponta para a sua planilha.</p>
-              <p className="text-xs font-bold text-gray-600 uppercase">3. Garanta que o JSON retornado tenha a matriz padrão.</p>
+              <p className="text-xs font-bold text-gray-600 uppercase">3. Garanta que a URL ainda existe e é pública (Faça um novo deploy no Google Sheets).</p>
             </div>
-            
-            <button onClick={() => window.location.reload()} className="mt-6 w-full bg-[#111] text-white p-4 font-black uppercase hover:bg-[#008080] transition-colors border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:border-black hover:shadow-none">
-              Tentar Novamente
-            </button>
+            <button onClick={() => window.location.reload()} className="mt-6 w-full bg-[#111] text-white p-4 font-black uppercase hover:bg-[#008080] transition-colors border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:border-black hover:shadow-none">Tentar Novamente</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // Drill-down Screens
   if (selectedMunicipio && selectedBairro) {
     const bairroData = rawData.filter(d => d.municipio === selectedMunicipio && d.bairro === selectedBairro && parseInt(d.votos) > 0);
     return <div className="p-4 md:p-8 min-h-screen bg-[#f4f4f4]"><BairroDetail bairro={selectedBairro} municipio={selectedMunicipio} data={bairroData} onBack={() => setSelectedBairro(null)} /></div>;
@@ -772,136 +628,67 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#f4f4f4] font-sans selection:bg-[#e2b714] selection:text-black">
-      
-      {/* Menu Mobile */}
-      <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden print:hidden fixed bottom-4 right-4 z-50 bg-[#111] text-white p-4 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full">
-        <Icons.Filter />
-      </button>
-
-      {/* Barra Lateral / Filtros */}
+      <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden print:hidden fixed bottom-4 right-4 z-50 bg-[#111] text-white p-4 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full"><Icons.Filter /></button>
       <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-40 w-72 bg-white border-r-4 border-black flex-shrink-0 print:hidden flex flex-col transition-transform duration-300 ease-in-out`}>
         <div className="p-6 border-b-4 border-black bg-[#111] text-white flex items-center gap-3">
-          <div className="w-12 h-12 bg-[#e2b714] border-2 border-white flex items-center justify-center font-black text-xl text-black shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]">
-             🗂️
-          </div>
-          <div>
-            <h1 className="font-black text-2xl tracking-tighter uppercase leading-none">Tabulum</h1>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#e2b714]">Mapa Eleitoral</p>
-          </div>
+          <div className="w-12 h-12 bg-[#e2b714] border-2 border-white flex items-center justify-center font-black text-xl text-black shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]">🗂️</div>
+          <div><h1 className="font-black text-2xl tracking-tighter uppercase leading-none">Tabulum</h1><p className="text-[10px] font-bold uppercase tracking-widest text-[#e2b714]">Mapa Eleitoral</p></div>
         </div>
-
         <div className="p-6 flex-grow overflow-y-auto">
           <div className="flex justify-between items-center mb-6 border-b-2 border-gray-200 pb-2">
-            <h2 className="font-black uppercase text-sm text-[#111] flex items-center"><Icons.Filter /> <span className="ml-1">Filtros Universais</span></h2>
-            {(filters.regioes.length > 0 || filters.municipios.length > 0) && (
-              <button onClick={clearFilters} className="text-[10px] font-black uppercase text-[#c32148] hover:underline bg-gray-100 px-2 py-1">Limpar</button>
-            )}
+            <h2 className="font-black uppercase text-sm text-[#111] flex items-center"><Icons.Filter /> <span className="ml-1">Filtros</span></h2>
+            {(filters.regioes.length > 0 || filters.municipios.length > 0) && <button onClick={clearFilters} className="text-[10px] font-black uppercase text-[#c32148] hover:underline bg-gray-100 px-2 py-1">Limpar</button>}
           </div>
-
           <div className="mb-8">
-            <h3 className="text-[10px] font-black text-gray-500 mb-3 uppercase tracking-widest bg-gray-100 p-1 inline-block border-l-4 border-[#008080]">Regiões Mapeadas</h3>
+            <h3 className="text-[10px] font-black text-gray-500 mb-3 uppercase tracking-widest bg-gray-100 p-1 inline-block border-l-4 border-[#008080]">Regiões</h3>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
               {optionsRegioes.map(r => (
                 <label key={r} className="flex items-start space-x-3 cursor-pointer group p-1 hover:bg-gray-50 transition">
-                  <input type="checkbox" 
-                         checked={filters.regioes.includes(r)}
-                         onChange={() => toggleFilter('regioes', r)}
-                         className="mt-1 h-4 w-4 text-[#111] border-2 border-black rounded-none focus:ring-0 cursor-pointer" />
+                  <input type="checkbox" checked={filters.regioes.includes(r)} onChange={() => toggleFilter('regioes', r)} className="mt-1 h-4 w-4 text-[#111] border-2 border-black rounded-none focus:ring-0 cursor-pointer" />
                   <span className={`text-xs font-bold uppercase ${filters.regioes.includes(r) ? 'text-[#111]' : 'text-gray-600'} group-hover:text-[#008080]`}>{r}</span>
                 </label>
               ))}
             </div>
           </div>
-          
           <hr className="border-t-2 border-gray-200 mb-6" />
-          
           <div className="space-y-3">
-            <button onClick={() => exportToCSV(rawData, 'tabulum_dados_completos.csv')} 
-                    className="w-full flex items-center justify-center p-3 bg-white hover:bg-[#111] hover:text-white text-[#111] text-xs font-black uppercase tracking-wider transition border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1">
-              <Icons.Download /> Baixar CSV
-            </button>
-            <button onClick={() => window.print()} 
-                    className="w-full flex items-center justify-center p-3 bg-white hover:bg-[#111] hover:text-white text-[#111] text-xs font-black uppercase tracking-wider transition border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1">
-              <Icons.Printer /> Exportar PDF
-            </button>
+            <button onClick={() => exportToCSV(rawData, 'tabulum_dados.csv')} className="w-full flex items-center justify-center p-3 bg-white hover:bg-[#111] hover:text-white text-[#111] text-xs font-black uppercase tracking-wider transition border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"><Icons.Download /> Baixar CSV</button>
+            <button onClick={() => window.print()} className="w-full flex items-center justify-center p-3 bg-white hover:bg-[#111] hover:text-white text-[#111] text-xs font-black uppercase tracking-wider transition border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-1"><Icons.Printer /> Exportar PDF</button>
           </div>
         </div>
       </aside>
-
-      {/* Overlay Mobile */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden print:hidden" onClick={() => setIsSidebarOpen(false)}></div>
-      )}
-
-      {/* Conteúdo Central */}
+      {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden print:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#f4f4f4] relative z-10 w-full print:h-auto print:overflow-visible">
-        
-        {/* Navegação Superior */}
         <header className="bg-white border-b-4 border-black p-4 print:hidden flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 shadow-sm z-20">
           <div className="flex border-2 border-black bg-[#111] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full sm:w-auto">
-            {[
-              { id: 'list', label: 'Municípios', color: 'bg-[#e2b714]' },
-              { id: 'dashboard', label: 'Visão Geral', color: 'bg-[#008080]' },
-              { id: 'map', label: 'Mapa', color: 'bg-[#c32148]' }
-            ].map((tab) => (
-              <button key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black uppercase tracking-widest transition border-r-2 border-black last:border-r-0 ${activeTab === tab.id ? `${tab.color} text-[#111] ${tab.id !== 'list' ? 'text-white' : ''}` : 'bg-white text-gray-500 hover:bg-gray-200'}`}>
-                {tab.label}
-              </button>
+            {[{ id: 'list', label: 'Municípios', color: 'bg-[#e2b714]' }, { id: 'dashboard', label: 'Visão Geral', color: 'bg-[#008080]' }].map((tab) => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black uppercase tracking-widest transition border-r-2 border-black last:border-r-0 ${activeTab === tab.id ? `${tab.color} text-[#111] ${tab.id !== 'list' ? 'text-white' : ''}` : 'bg-white text-gray-500 hover:bg-gray-200'}`}>{tab.label}</button>
             ))}
           </div>
-          
           {activeTab === 'list' && (
             <div className="flex border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white">
-              <button onClick={() => setViewMode('list')} className={`px-4 py-2 border-r-2 border-black transition ${viewMode === 'list' ? 'bg-[#111] text-white' : 'text-gray-400 hover:bg-gray-100 text-[#111]'}`}>
-                <Icons.List />
-              </button>
-              <button onClick={() => setViewMode('cards')} className={`px-4 py-2 transition ${viewMode === 'cards' ? 'bg-[#111] text-white' : 'text-gray-400 hover:bg-gray-100 text-[#111]'}`}>
-                <Icons.Grid />
-              </button>
+              <button onClick={() => setViewMode('list')} className={`px-4 py-2 border-r-2 border-black transition ${viewMode === 'list' ? 'bg-[#111] text-white' : 'text-gray-400 hover:bg-gray-100 text-[#111]'}`}><Icons.List /></button>
+              <button onClick={() => setViewMode('cards')} className={`px-4 py-2 transition ${viewMode === 'cards' ? 'bg-[#111] text-white' : 'text-gray-400 hover:bg-gray-100 text-[#111]'}`}><Icons.Grid /></button>
             </div>
           )}
         </header>
-
-        {/* Área de Visualização Principal */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 w-full print:p-0 print:overflow-visible">
-          
           {activeTab === 'list' && (
             <div className="animate-[fadeIn_0.3s_ease-in-out] w-full">
-              {viewMode === 'list' ? (
-                <SortableTable 
-                  data={munsComVoto} 
-                  columns={munsColumns} 
-                  expandableCol="municipio"
-                  expandRenderer={renderBairrosExpand}
-                />
-              ) : (
-                renderCards()
-              )}
+              {viewMode === 'list' ? <SortableTable data={munsComVoto} columns={munsColumns} expandableCol="municipio" expandRenderer={renderBairrosExpand} /> : renderCards()}
             </div>
           )}
-
           {activeTab === 'dashboard' && renderDashboard()}
-          {activeTab === 'map' && renderMap()}
-
-          {/* Rodapé - Municípios ZERO Votos */}
           {activeTab === 'list' && munsSemVoto.length > 0 && (
             <div className="mt-12 pt-6 border-t-4 border-black print:hidden animate-[fadeIn_0.3s_ease-in-out] w-full">
-              <button onClick={() => setShowZeroVotes(!showZeroVotes)}
-                      className="bg-white border-2 border-black px-4 py-2 text-xs font-black uppercase text-[#111] hover:bg-[#111] hover:text-white transition flex items-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+              <button onClick={() => setShowZeroVotes(!showZeroVotes)} className="bg-white border-2 border-black px-4 py-2 text-xs font-black uppercase text-[#111] hover:bg-[#111] hover:text-white transition flex items-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                 {showZeroVotes ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
                 <span className="ml-2">Municípios com Zero Votos ({munsSemVoto.length})</span>
               </button>
-              
               {showZeroVotes && (
                 <div className="mt-6 flex flex-wrap gap-2 p-4 bg-white border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
                   <p className="w-full text-[10px] font-black uppercase text-[#c32148] mb-2 tracking-widest">Abaixo listados apenas os municípios onde não houve registro de votos:</p>
-                  {munsSemVoto.map((m, i) => (
-                    <span key={i} className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] font-bold uppercase border-2 border-gray-300">
-                      {m.municipio}
-                    </span>
-                  ))}
+                  {munsSemVoto.map((m, i) => <span key={i} className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] font-bold uppercase border-2 border-gray-300">{m.municipio}</span>)}
                 </div>
               )}
             </div>

@@ -10,19 +10,12 @@ const COLORS = {
 };
 const PIE_COLORS = [COLORS.mustard, COLORS.teal, COLORS.crimson, '#555555', '#999999', '#333333', '#dddddd'];
 
-// Busca a URL da API das variáveis de ambiente
-const getApiUrl = () => {
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) return import.meta.env.VITE_SCRIPT_URL;
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-    if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_API_URL) return process.env.REACT_APP_API_URL;
-    if (typeof process !== 'undefined' && process.env && process.env.VITE_SCRIPT_URL) return process.env.VITE_SCRIPT_URL;
-  } catch (e) {
-    console.warn("Ambiente de variáveis não detectado perfeitamente.");
-  }
-  return ""; 
-};
-const API_URL = getApiUrl();
+// A injeção dinâmica no Vite às vezes falha no build da Vercel. 
+// Definimos o fallback explícito usando a URL do seu print para garantir que sempre funcione.
+const fallbackUrl = "https://script.google.com/macros/s/AKfycbwZwDGkjRLBM-m5_HuE1UUVEsCTXchPkD5FncPwd6Sq8LLVEhE7ZW4_gs_SS5epjM8b/exec";
+const API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) 
+  ? import.meta.env.VITE_SCRIPT_URL 
+  : fallbackUrl;
 
 const Icons = {
   ChevronDown: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>,
@@ -385,12 +378,15 @@ export default function App() {
     let parsedRows = [];
     const targetArray = json.estado || json.votos || json.dados || json.capital || json;
     
-    if (!Array.isArray(targetArray) || targetArray.length < 2) {
+    if (!Array.isArray(targetArray)) {
       throw new Error("Formato de JSON inválido ou vazio. É necessário um array contendo os dados da planilha.");
     }
 
+    if (targetArray.length === 0) return [];
+
     // Se for Array de Arrays (Padrão Sheets API RAW)
     if (Array.isArray(targetArray[0])) {
+      if (targetArray.length < 2) return [];
       const headers = targetArray[0].map(h => String(h).trim().toLowerCase());
       
       const idx = {
@@ -419,7 +415,7 @@ export default function App() {
     } else {
        // Já é Array de Objetos (JSON Mapeado)
        parsedRows = targetArray.map(row => {
-          const lowerKeys = Object.keys(row).reduce((acc, k) => { acc[k.toLowerCase()] = row[k]; return acc; }, {});
+          const lowerKeys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
           return {
              municipio: lowerKeys['município'] || lowerKeys['municipio'] || lowerKeys['cidade'],
              regiao: lowerKeys['região'] || lowerKeys['regiao'] || 'Sem Região',
@@ -449,12 +445,29 @@ export default function App() {
       }
 
       try {
-        const res = await fetch(API_URL);
-        if (!res.ok) throw new Error(`Erro HTTP: ${res.status}`);
+        const res = await fetch(API_URL, { redirect: 'follow' });
+        if (!res.ok) {
+           if (res.status === 404) {
+             throw new Error("ERRO 404: Link da API não encontrado. Verifique a URL gerada.");
+           }
+           throw new Error(`Erro HTTP: ${res.status}`);
+        }
+        
+        // Verifica se o Google redirecionou para uma página HTML de login (erro de permissão)
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.indexOf("text/html") !== -1) {
+           throw new Error("Erro de Permissão: O Google exigiu login. Refaça a implantação no Apps Script marcando o acesso para 'Qualquer pessoa'.");
+        }
+
         const json = await res.json();
+
+        // Tratamento explícito para erros devolvidos pelo Apps Script (try/catch no codigo.gs)
+        if (json.status === "error") {
+           throw new Error(`Erro interno da Planilha: ${json.message}`);
+        }
         
         const cleanData = parseJSONData(json);
-        if (cleanData.length === 0) throw new Error("A base de dados foi processada, mas retornou vazia.");
+        if (cleanData.length === 0) throw new Error("A base de dados foi processada, mas retornou vazia. Verifique os nomes das colunas na planilha.");
 
         setRawData(cleanData);
       } catch (e) {

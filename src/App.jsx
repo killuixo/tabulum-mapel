@@ -45,9 +45,20 @@ const parseNumberStrict = (val) => {
   if (typeof val === 'number') return val;
   let str = String(val).trim();
   if (str === '-' || str === '') return 0;
-  str = str.replace(/[R$\s]/g, '');
-  if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
-  else if (/\.\d{3}$/.test(str) || str.split('.').length > 2) str = str.replace(/\./g, '');
+  
+  // Remove R$ e espaços
+  str = str.replace(/[R$\s]/gi, '');
+  
+  // Trata padrão numérico brasileiro (vírgula como decimal)
+  if (str.includes(',')) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Se tiver ponto atuando como separador de milhar (ex: 1.250)
+    if (/\.\d{3}$/.test(str) && (str.match(/\./g) || []).length === 1) {
+      str = str.replace(/\./g, '');
+    }
+  }
+  
   const parsed = parseFloat(str);
   return isNaN(parsed) ? 0 : parsed;
 };
@@ -376,7 +387,8 @@ export default function App() {
   // Interpretador Universal Inteligente de Planilhas Google via JSON
   const parseJSONData = (json) => {
     let parsedRows = [];
-    const targetArray = json.estado || json.votos || json.dados || json.capital || json;
+    // Busca a matriz de dados em qualquer possível formato de retorno
+    const targetArray = json.estado || json.votos || json.dados || json.capital || json.data || json;
     
     if (!Array.isArray(targetArray)) {
       throw new Error("Formato de JSON inválido ou vazio. É necessário um array contendo os dados da planilha.");
@@ -384,26 +396,42 @@ export default function App() {
 
     if (targetArray.length === 0) return [];
 
+    // Função auxiliar super flexível para extrair valores baseados em palavras-chave das colunas
+    const findVal = (rowObj, keywords) => {
+      const keys = Object.keys(rowObj);
+      for (let kw of keywords) {
+        const foundKey = keys.find(k => k.toLowerCase().trim().includes(kw));
+        if (foundKey) return rowObj[foundKey];
+      }
+      return null;
+    };
+
     // Se for Array de Arrays (Padrão Sheets API RAW)
     if (Array.isArray(targetArray[0])) {
       if (targetArray.length < 2) return [];
       const headers = targetArray[0].map(h => String(h).trim().toLowerCase());
       
-      const idx = {
-        municipio: headers.findIndex(h => h.includes('município') || h === 'cidade'),
-        regiao: headers.findIndex(h => h.includes('região') || h.includes('macrorregião')),
-        bairro: headers.findIndex(h => h.includes('bairro')),
-        local: headers.findIndex(h => h.includes('local') || h.includes('escola')),
-        zona: headers.findIndex(h => h === 'zona'),
-        secao: headers.findIndex(h => h === 'seção' || h === 'secao'),
-        votos: headers.findIndex(h => h.includes('voto') || h.includes('2022')),
-        emendas: headers.findIndex(h => h.includes('emenda') || h.includes('loa') || h.includes('valor'))
+      const getIdx = (kws) => {
+        for(let kw of kws) {
+          const idx = headers.findIndex(h => h.includes(kw));
+          if (idx > -1) return idx;
+        }
+        return -1;
       };
 
-      if (idx.municipio === -1) throw new Error("Coluna de Município não encontrada.");
+      const idx = {
+        municipio: getIdx(['munic', 'cidade', 'nm_mun']),
+        regiao: getIdx(['regi', 'macro', 'meso']),
+        bairro: getIdx(['bairro', 'nm_bairro', 'localidade']),
+        local: getIdx(['local', 'escola', 'coleg']),
+        zona: getIdx(['zona']),
+        secao: getIdx(['seç', 'sec']),
+        votos: getIdx(['voto', 'qt_', 'qtd', 'total']),
+        emendas: getIdx(['emenda', 'valor', 'loa', 'r$'])
+      };
 
       parsedRows = targetArray.slice(1).map(row => ({
-        municipio: row[idx.municipio],
+        municipio: idx.municipio > -1 ? row[idx.municipio] : null,
         regiao: idx.regiao > -1 ? row[idx.regiao] : 'Sem Região',
         bairro: idx.bairro > -1 ? row[idx.bairro] : '',
         local: idx.local > -1 ? row[idx.local] : '',
@@ -413,23 +441,23 @@ export default function App() {
         emendas: idx.emendas > -1 ? parseNumberStrict(row[idx.emendas]) : 0,
       }));
     } else {
-       // Já é Array de Objetos (JSON Mapeado)
+       // É Array de Objetos (JSON Mapeado gerado pela API / App Script)
        parsedRows = targetArray.map(row => {
-          const lowerKeys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+          const mun = findVal(row, ['munic', 'cidade', 'nm_mun']);
           return {
-             municipio: lowerKeys['município'] || lowerKeys['municipio'] || lowerKeys['cidade'],
-             regiao: lowerKeys['região'] || lowerKeys['regiao'] || 'Sem Região',
-             bairro: lowerKeys['bairro'],
-             local: lowerKeys['local'] || lowerKeys['local de votação'],
-             zona: lowerKeys['zona'],
-             secao: lowerKeys['seção'] || lowerKeys['secao'],
-             votos: parseNumberStrict(lowerKeys['votos'] || lowerKeys['votos 2022'] || 0),
-             emendas: parseNumberStrict(lowerKeys['emenda'] || lowerKeys['emendas'] || lowerKeys['valor'] || 0)
+             municipio: mun,
+             regiao: findVal(row, ['regi', 'macro', 'meso']) || 'Sem Região',
+             bairro: findVal(row, ['bairro', 'nm_bairro', 'localidade']) || '',
+             local: findVal(row, ['local', 'escola', 'coleg']) || '',
+             zona: findVal(row, ['zona']) || '',
+             secao: findVal(row, ['seç', 'sec']) || '',
+             votos: parseNumberStrict(findVal(row, ['voto', 'qt_', 'qtd', 'total'])),
+             emendas: parseNumberStrict(findVal(row, ['emenda', 'valor', 'loa', 'r$']))
           };
        });
     }
 
-    // Filtra linhas inválidas
+    // Filtra linhas inválidas ou de cabeçalhos vazios
     return parsedRows.filter(r => r.municipio && String(r.municipio).trim() !== "");
   };
 

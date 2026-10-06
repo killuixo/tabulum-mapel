@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 
-const COLORS = { mustard: '#e2b714', teal: '#008080', crimson: '#c32148', black: '#111111', white: '#ffffff', lightGray: '#f4f4f4' };
+const COLORS = {
+  mustard: '#e2b714',
+  teal: '#008080',
+  crimson: '#c32148',
+  black: '#111111',
+  white: '#ffffff',
+  lightGray: '#f4f4f4'
+};
 const PIE_COLORS = [COLORS.mustard, COLORS.teal, COLORS.crimson, '#555555', '#999999', '#333333', '#dddddd'];
 
 const getApiUrl = () => {
@@ -56,7 +63,8 @@ const exportToCSV = (data, filename) => {
   document.body.removeChild(link);
 };
 
-// --- GRÁFICOS NATIVOS ---
+const normalizeName = (str) => String(str).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
 const NativeBarChart = ({ data }) => {
   if (!data || data.length === 0) return <div className="p-4 text-xs font-bold uppercase text-gray-500">Sem dados para o gráfico</div>;
   const maxVal = Math.max(...data.map(d => d.value));
@@ -79,7 +87,6 @@ const NativePieChart = ({ data }) => {
   if (!data || data.length === 0) return null;
   const total = data.reduce((acc, curr) => acc + curr.value, 0);
   let cumulativePercent = 0;
-
   return (
     <div className="w-full h-full flex flex-col sm:flex-row items-center justify-center p-4 gap-6">
       <div className="w-40 h-40 shrink-0 relative">
@@ -111,7 +118,6 @@ const NativePieChart = ({ data }) => {
   );
 };
 
-// --- MAPA LEAFLET COM GEOJSON SC ---
 const LeafletMap = ({ data, onCityClick }) => {
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
@@ -133,50 +139,41 @@ const LeafletMap = ({ data, onCityClick }) => {
     const map = window.L.map(mapContainer, { zoomControl: false }).setView([-27.27, -50.49], 7);
     window.L.control.zoom({ position: 'topleft' }).addTo(map);
 
-    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 19
     }).addTo(map);
 
-    // Mapeamento de Votos para as Cores (Estilo Heatmap Coropleth do Colega)
     const getColor = (votos) => {
-      if (votos > 10000) return '#064e3b'; // Verde muito escuro
+      if (votos > 10000) return '#064e3b';
       if (votos > 2500) return '#047857';
       if (votos > 1000) return '#10b981';
       if (votos > 500) return '#34d399';
       if (votos > 100) return '#6ee7b7';
       if (votos > 20) return '#a7f3d0';
       if (votos > 0) return '#d1fae5';
-      return '#f8fafc'; // Cinza claro (sem votos)
+      return '#f8fafc';
     };
 
     const mapMunsToData = {};
-    data.forEach(m => { mapMunsToData[m.municipio.toUpperCase()] = m; });
+    data.forEach(m => { mapMunsToData[normalizeName(m.municipio)] = m; });
 
-    // Busca o GeoJSON de SC da internet para desenhar os polígonos
     fetch('https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-42-mun.json')
       .then(res => res.json())
       .then(geoData => {
         window.L.geoJson(geoData, {
           style: (feature) => {
-            const munName = String(feature.properties.name).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const munName = normalizeName(feature.properties.name);
             const munData = mapMunsToData[munName];
-            return {
-              fillColor: munData ? getColor(munData.votosTotais) : '#f8fafc',
-              weight: 1,
-              opacity: 1,
-              color: '#333', // Borda escura para dar o contraste Mondrian
-              fillOpacity: 0.8
-            };
+            return { fillColor: munData ? getColor(munData.votosTotais) : '#f8fafc', weight: 1, opacity: 1, color: '#333', fillOpacity: 0.8 };
           },
           onEachFeature: (feature, layer) => {
-            const munName = String(feature.properties.name).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const munName = normalizeName(feature.properties.name);
             const munData = mapMunsToData[munName];
             
-            // Tooltip idêntico ao do colega (fundo escuro)
             layer.bindTooltip(
-              `<div class="bg-[#1e293b] text-white p-2 rounded shadow-lg text-xs font-sans">
-                 <strong class="text-sm block border-b border-gray-600 pb-1 mb-1">${feature.properties.name}</strong>
-                 <span class="text-gray-400">Votos 2026:</span> <span class="text-green-400 font-bold">${munData ? munData.votosTotais.toLocaleString() : 0}</span>
+              `<div class="bg-[#1e293b] text-white p-2 rounded shadow-lg text-xs font-sans border-2 border-black">
+                 <strong class="text-sm block border-b border-gray-600 pb-1 mb-1 uppercase">${feature.properties.name}</strong>
+                 <span class="text-gray-400">Votos 2026:</span> <span class="text-[#e2b714] font-black">${munData ? munData.votosTotais.toLocaleString() : 0}</span>
                </div>`,
               { sticky: true, direction: 'auto', className: 'custom-tooltip border-0 bg-transparent shadow-none' }
             );
@@ -197,38 +194,35 @@ const LeafletMap = ({ data, onCityClick }) => {
     <div className="w-full h-full z-10 relative">
       <style>{`.custom-tooltip { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }`}</style>
       <div ref={mapRef} className="w-full h-full"></div>
-      
-      {/* Legenda do Mapa */}
       <div className="absolute bottom-4 right-4 z-[400] bg-[#111] border-2 border-black p-3 text-white text-[10px] font-bold uppercase shadow-[4px_4px_0px_0px_rgba(255,255,255,1)]">
-        <p className="mb-2 border-b border-gray-700 pb-1">Votos em 2026</p>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#064e3b]"></div> &gt; 10.000 votos</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#047857]"></div> 2.500 - 10.000</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#10b981]"></div> 1.000 - 2.500</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#34d399]"></div> 500 - 1.000</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#6ee7b7]"></div> 100 - 500</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#a7f3d0]"></div> 20 - 100</div>
-        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#d1fae5]"></div> 1 - 20</div>
-        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#f8fafc]"></div> Sem votos</div>
+        <p className="mb-2 border-b border-gray-700 pb-1">Votos SC</p>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#064e3b] border border-gray-500"></div> &gt; 10.000</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#047857] border border-gray-500"></div> 2.500 - 10.000</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#10b981] border border-gray-500"></div> 1.000 - 2.500</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#34d399] border border-gray-500"></div> 500 - 1.000</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#6ee7b7] border border-gray-500"></div> 100 - 500</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#a7f3d0] border border-gray-500"></div> 20 - 100</div>
+        <div className="flex items-center gap-2 mb-1"><div className="w-3 h-3 bg-[#d1fae5] border border-gray-500"></div> 1 - 20</div>
+        <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#f8fafc] border border-gray-500"></div> 0</div>
       </div>
     </div>
   );
 };
 
-// --- CHATBOT ---
 const Chatbot = ({ rawData, munsData }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([{ sender: 'bot', text: 'SISTEMA ATIVO. Pergunte sobre votos, regiões ou cidades.' }]);
+  const [messages, setMessages] = useState([{ sender: 'bot', text: 'SISTEMA ATIVO. Consulta de Votos 2026.' }]);
   const [input, setInput] = useState('');
 
   const processQuery = (query) => {
-    const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (q.includes("total") || q.includes("quantos votos")) {
+    const q = normalizeName(query);
+    if (q.includes("TOTAL") || q.includes("QUANTOS VOTOS")) {
       const total = rawData.reduce((acc, curr) => acc + curr.votos, 0);
-      return `O total processado na planilha atual é de ${total.toLocaleString('pt-BR')} votos.`;
+      return `Total processado: ${total.toLocaleString('pt-BR')} votos.`;
     }
-    const mun = munsData.find(m => m.municipio.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === q);
-    if (mun) return `Em ${mun.municipio} (${mun.regiao}), o registro é de ${mun.votosTotais.toLocaleString('pt-BR')} votos.`;
-    return "Tente perguntar 'Total de votos' ou digite o nome de um município exato.";
+    const mun = munsData.find(m => normalizeName(m.municipio) === q);
+    if (mun) return `${mun.municipio} (${mun.regiao}): ${mun.votosTotais.toLocaleString('pt-BR')} votos.`;
+    return "Consulte o total de votos ou informe o nome exato do município.";
   };
 
   const handleSend = (e) => {
@@ -243,7 +237,7 @@ const Chatbot = ({ rawData, munsData }) => {
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end print:hidden">
       {isOpen && (
         <div className="w-80 h-96 bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col mb-4">
-          <div className="bg-[#111] text-white p-3 border-b-4 border-black flex justify-between items-center"><span className="font-black uppercase text-xs flex items-center gap-2"><Icons.Chat /> Assistente Marquito</span><button onClick={() => setIsOpen(false)}>X</button></div>
+          <div className="bg-[#111] text-white p-3 border-b-4 border-black flex justify-between items-center"><span className="font-black uppercase text-xs flex items-center gap-2"><Icons.Chat /> Terminal de Dados</span><button onClick={() => setIsOpen(false)}>X</button></div>
           <div className="flex-1 overflow-y-auto p-4 bg-[#f4f4f4] space-y-3">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -251,7 +245,7 @@ const Chatbot = ({ rawData, munsData }) => {
               </div>
             ))}
           </div>
-          <form onSubmit={handleSend} className="border-t-4 border-black flex"><input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Pergunte..." className="flex-1 p-2 bg-white text-xs font-bold uppercase outline-none" /><button type="submit" className="bg-[#111] text-white px-4 font-black">IR</button></form>
+          <form onSubmit={handleSend} className="border-t-4 border-black flex"><input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Comando..." className="flex-1 p-2 bg-white text-xs font-bold uppercase outline-none" /><button type="submit" className="bg-[#111] text-white px-4 font-black">EX</button></form>
         </div>
       )}
       {!isOpen && <button onClick={() => setIsOpen(true)} className="w-14 h-14 bg-[#111] border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full flex items-center justify-center hover:scale-110 transition-transform"><Icons.Chat /></button>}
@@ -259,7 +253,6 @@ const Chatbot = ({ rawData, munsData }) => {
   );
 };
 
-// --- FICHAS DE DETALHE ---
 const MunicipioDetail = ({ municipioData, onBack }) => {
   const bairros = municipioData.bairrosRaw.reduce((acc, curr) => {
     if (!acc[curr.bairro]) acc[curr.bairro] = { bairro: curr.bairro, votos: 0, locais: [] };
@@ -273,7 +266,7 @@ const MunicipioDetail = ({ municipioData, onBack }) => {
   return (
     <div className="max-w-6xl mx-auto w-full animate-[fadeIn_0.3s_ease-in-out]">
       <button onClick={onBack} className="print:hidden flex items-center bg-[#111] text-white px-4 py-2 font-black uppercase text-xs mb-6 hover:bg-[#e2b714] hover:text-[#111] transition shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black">
-        <Icons.ArrowLeft /> <span className="ml-2">Voltar</span>
+        <Icons.ArrowLeft /> <span className="ml-2">Retornar</span>
       </button>
       
       <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] mb-8">
@@ -284,13 +277,13 @@ const MunicipioDetail = ({ municipioData, onBack }) => {
         </div>
         <div className="p-6 bg-[#f4f4f4]">
           <div className="border-4 border-black bg-white p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] inline-block">
-            <p className="text-xs font-black uppercase text-gray-500 mb-2 border-b-2 border-gray-200 pb-1">Votos Consolidados (2026)</p>
+            <p className="text-xs font-black uppercase text-gray-500 mb-2 border-b-2 border-gray-200 pb-1">Total Consolidado (2026)</p>
             <p className="text-4xl font-black text-[#c32148]">{municipioData.votosTotais.toLocaleString('pt-BR')}</p>
           </div>
         </div>
       </div>
 
-      <h3 className="font-black uppercase text-xl mb-4 text-[#111] border-b-4 border-black pb-2 inline-block">Bairros Mapeados</h3>
+      <h3 className="font-black uppercase text-xl mb-4 text-[#111] border-b-4 border-black pb-2 inline-block">Registros Locais</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {Object.values(bairros).sort((a,b) => b.votos - a.votos).map((b, i) => (
           <div key={i} className="border-4 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
@@ -323,34 +316,26 @@ const MunicipioDetail = ({ municipioData, onBack }) => {
   );
 };
 
-// --- APLICATIVO ---
 export default function App() {
   const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
   const [activeTab, setActiveTab] = useState('list');
-  const [viewMode, setViewMode] = useState('list'); // 'list' ou 'cards'
+  const [viewMode, setViewMode] = useState('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  // Filtros Múltiplos
   const [filters, setFilters] = useState({ regioes: [], municipios: [], associacoes: [] });
-
   const [selectedMunicipio, setSelectedMunicipio] = useState(null);
-
-  // Ordenação da Tabela
   const [sortConfig, setSortConfig] = useState({ key: 'votosTotais', direction: 'desc' });
 
   const parseJSONData = (json) => {
     let parsedRows = [];
     const targetArray = json.estado || json.votos || json.dados || json.capital || json;
-    if (!Array.isArray(targetArray) || targetArray.length < 2) throw new Error("Formato de JSON inválido ou vazio.");
-
-    const normalizeKey = (k) => String(k).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    if (!Array.isArray(targetArray) || targetArray.length < 2) throw new Error("Formato inválido.");
 
     if (Array.isArray(targetArray[0])) {
-      const headers = targetArray[0].map(normalizeKey);
+      const headers = targetArray[0].map(normalizeName);
       const idx = {
         municipio: headers.findIndex(h => h === 'MUNICIPIO'),
         regiao: headers.findIndex(h => h === 'REGIAO EM SC'),
@@ -362,7 +347,7 @@ export default function App() {
         votos: headers.findIndex(h => h === 'QUANTIDADE DE VOTOS')
       };
 
-      if (idx.municipio === -1 || idx.votos === -1) throw new Error("Colunas obrigatórias não encontradas no CSV.");
+      if (idx.municipio === -1 || idx.votos === -1) throw new Error("Colunas obrigatórias ausentes.");
 
       parsedRows = targetArray.slice(1).map(row => ({
         municipio: row[idx.municipio] || '',
@@ -381,6 +366,119 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      if (!API_URL) { setError("VITE_SCRIPT_URL não definida na Vercel."); setLoading(false); return; }
+      if (!API_URL) { setError("VITE_SCRIPT_URL não configurada."); setLoading(false); return; }
       try {
-        const res = await fetch(API_URL
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        setRawData(parseJSONData(json));
+      } catch (e) { setError(`FALHA: ${e.message}`); } 
+      finally { setLoading(false); }
+    };
+    fetchData();
+  }, []);
+
+  const { munsComVoto, optionsRegioes, optionsAssociacoes, chartDataRegioes, totalGeral } = useMemo(() => {
+    if (rawData.length === 0) return { munsComVoto: [], optionsRegioes: [], optionsAssociacoes: [], chartDataRegioes: [], totalGeral: 0 };
+
+    const query = normalizeName(searchQuery);
+    const regSet = new Set();
+    const assSet = new Set();
+    
+    rawData.forEach(d => {
+      if(d.regiao && d.regiao !== 'Sem Região') regSet.add(d.regiao);
+      if(d.associacao && d.associacao !== 'Sem Associação') assSet.add(d.associacao);
+    });
+
+    const filteredRaw = rawData.filter(d => {
+      if (filters.regioes.length > 0 && !filters.regioes.includes(d.regiao)) return false;
+      if (filters.associacoes.length > 0 && !filters.associacoes.includes(d.associacao)) return false;
+
+      if (!query) return true;
+      return normalizeName(d.municipio).includes(query) || normalizeName(d.regiao).includes(query) || normalizeName(d.bairro).includes(query);
+    });
+
+    const mapMuns = {};
+    const regMap = {};
+    let total = 0;
+
+    filteredRaw.forEach(d => {
+      const munName = d.municipio ? String(d.municipio).trim() : 'Desconhecido';
+      const votosNum = parseInt(d.votos) || 0;
+
+      if (!mapMuns[munName]) mapMuns[munName] = { municipio: munName, regiao: d.regiao, associacao: d.associacao, votosTotais: 0, bairrosRaw: [] };
+      mapMuns[munName].votosTotais += votosNum;
+      total += votosNum;
+      if (votosNum > 0 && d.bairro && d.bairro !== "-") mapMuns[munName].bairrosRaw.push({ ...d, votos: votosNum });
+    });
+
+    let comVoto = Object.values(mapMuns).filter(m => m.votosTotais > 0);
+    comVoto.sort((a,b) => b.votosTotais - a.votosTotais);
+    comVoto = comVoto.map((m, i) => ({ ...m, ranking: i + 1 }));
+
+    comVoto.forEach(m => {
+      if(!regMap[m.regiao]) regMap[m.regiao] = 0;
+      regMap[m.regiao] += m.votosTotais;
+    });
+
+    return {
+      munsComVoto: comVoto,
+      optionsRegioes: Array.from(regSet).sort(),
+      optionsAssociacoes: Array.from(assSet).sort(),
+      chartDataRegioes: Object.keys(regMap).map(k => ({ name: k, value: regMap[k] })).sort((a,b) => b.value - a.value),
+      totalGeral: total
+    };
+  }, [rawData, searchQuery, filters]);
+
+  const sortedMuns = useMemo(() => {
+    let sortableItems = [...munsComVoto];
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aValue = typeof a[sortConfig.key] === 'string' ? a[sortConfig.key].toLowerCase() : a[sortConfig.key];
+        let bValue = typeof b[sortConfig.key] === 'string' ? b[sortConfig.key].toLowerCase() : b[sortConfig.key];
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [munsComVoto, sortConfig]);
+
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const toggleFilter = (type, value) => {
+    setFilters(prev => {
+      const current = prev[type];
+      if (current.includes(value)) return { ...prev, [type]: current.filter(v => v !== value) };
+      return { ...prev, [type]: [...current, value] };
+    });
+  };
+
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-[#f4f4f4]"><div className="text-xl font-black uppercase text-black">PROCESSANDO DADOS...</div></div>;
+  if (error) return <div className="flex min-h-screen items-center justify-center bg-[#f4f4f4] p-6"><div className="border-4 border-black bg-white p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"><h1 className="text-xl font-black uppercase text-[#c32148]">{error}</h1></div></div>;
+
+  if (selectedMunicipio) {
+    const munData = munsComVoto.find(m => m.municipio === selectedMunicipio);
+    if(munData) return <div className="p-4 md:p-8 min-h-screen bg-[#f4f4f4]"><MunicipioDetail municipioData={munData} onBack={() => setSelectedMunicipio(null)} /></div>;
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row bg-[#f4f4f4] font-sans selection:bg-[#e2b714] selection:text-black">
+      <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden print:hidden fixed bottom-20 right-4 z-50 bg-[#111] text-white p-4 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full"><Icons.Filter /></button>
+
+      <aside className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 z-40 w-72 bg-white border-r-4 border-black flex-shrink-0 print:hidden flex flex-col transition-transform duration-300 ease-in-out`}>
+        <div className="p-6 border-b-4 border-black bg-[#111] text-white flex items-center gap-3">
+          <div className="w-12 h-12 bg-[#e2b714] border-2 border-white flex items-center justify-center font-black text-xl text-black shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]">🗂️</div>
+          <div><h1 className="font-black text-2xl tracking-tighter uppercase leading-none">Tabulum</h1><p className="text-[10px] font-bold uppercase tracking-widest text-[#e2b714]">Mapa Eleitoral</p></div>
+        </div>
+        <div className="p-6 flex-grow overflow-y-auto">
+          <div className="flex justify-between items-center mb-6 border-b-2 border-gray-200 pb-2">
+            <h2 className="font-black uppercase text-sm text-[#111] flex items-center"><Icons.Filter /> <span className="ml-1">Filtros</span></h2>
+            {(filters.regioes.length > 0 || filters.associacoes.length > 0) && <button onClick={() => setFilters({ regioes: [], municipios: [], associacoes: [] })} className="text-[10px] font-black uppercase text-[#c32148] hover:underline bg-gray-100 px-2 py-1">Limpar</button>}
+          </div>
+          <div className="mb-6">
+            <h3 className="text-[10px] font-black text-gray-500 mb-

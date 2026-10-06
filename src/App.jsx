@@ -1,138 +1,285 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
-// Cores Mondrian / Marquito
-const COLORS = { mustard: '#e2b714', teal: '#008080', crimson: '#c32148', black: '#111111', white: '#ffffff', lightGray: '#f4f4f4' };
+// --- CONFIGURAÇÃO DE CORES (Mondrian) ---
+const COLORS = {
+  mustard: '#e2b714',
+  teal: '#008080',
+  crimson: '#c32148',
+  black: '#111111',
+  white: '#ffffff',
+  lightGray: '#f4f4f4'
+};
 const PIE_COLORS = [COLORS.mustard, COLORS.teal, COLORS.crimson, '#555555', '#999999', '#333333', '#dddddd'];
 
-// BANCO DE DADOS INTEGRADO (Extraído do arquivo HTML do seu colega - Zero Delay / Zero Erros 404)
-const DATABASE = {
-  "ano_2022": { "total_votos": 40329, "cidades_com_votos": 234 },
-  "ano_2026": { "total_votos": 65199, "cidades_com_votos": 274, "crescimento_votos_percentual": "+61.67%" },
-  "municipios": {
-    "FLORIANÓPOLIS": { nome: "Florianópolis", regiao: "Grande Florianópolis", votos_2022: 25975, votos_2026: 37062, crescimento: "+42.68%" },
-    "SÃO JOSÉ": { nome: "São José", regiao: "Grande Florianópolis", votos_2022: 3179, votos_2026: 5059, crescimento: "+59.14%" },
-    "PALHOÇA": { nome: "Palhoça", regiao: "Grande Florianópolis", votos_2022: 1556, votos_2026: 2564, crescimento: "+64.78%" },
-    "JOINVILLE": { nome: "Joinville", regiao: "Norte Catarinense", votos_2022: 1029, votos_2026: 1555, crescimento: "+51.12%" },
-    "GAROPABA": { nome: "Garopaba", regiao: "Sul Catarinense", votos_2022: 432, votos_2026: 1353, crescimento: "+213.19%" },
-    "IMBITUBA": { nome: "Imbituba", regiao: "Sul Catarinense", votos_2022: 535, votos_2026: 1202, crescimento: "+124.67%" },
-    "ITAJAÍ": { nome: "Itajaí", regiao: "Vale do Itajaí", votos_2022: 595, votos_2026: 1079, crescimento: "+81.34%" },
-    "BLUMENAU": { nome: "Blumenau", regiao: "Vale do Itajaí", votos_2022: 555, votos_2026: 891, crescimento: "+60.54%" },
-    "CRICIÚMA": { nome: "Criciúma", regiao: "Sul Catarinense", votos_2022: 238, votos_2026: 887, crescimento: "+272.69%" },
-    "BIGUAÇU": { nome: "Biguaçu", regiao: "Grande Florianópolis", votos_2022: 569, votos_2026: 829, crescimento: "+45.69%" },
-    "BALNEÁRIO CAMBORIÚ": { nome: "Balneário Camboriú", regiao: "Vale do Itajaí", votos_2022: 511, votos_2026: 789, crescimento: "+54.40%" },
-    "LAGES": { nome: "Lages", regiao: "Serrana", votos_2022: 236, votos_2026: 609, crescimento: "+158.05%" },
-    "CHAPECÓ": { nome: "Chapecó", regiao: "Oeste Catarinense", votos_2022: 110, votos_2026: 488, crescimento: "+343.64%" }
-  }
+// --- VARIÁVEIS DE AMBIENTE ---
+const getApiUrl = () => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SCRIPT_URL) {
+      return import.meta.env.VITE_SCRIPT_URL;
+    }
+  } catch (e) {}
+  return ""; 
 };
+const API_URL = getApiUrl();
 
+// --- ÍCONES ---
 const Icons = {
+  Search: () => <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>,
+  Chat: () => <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>,
+  ChevronDown: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>,
+  ChevronRight: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M9 5l7 7-7 7"></path></svg>,
   Chart: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M18 20V10M12 20V4M6 20v-6"></path></svg>,
   Map: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M9 20l-6-3V5l6 3m0 12l6-3m-6 3V8m6 10l6 3V6l-6-3m0 15V5"></path></svg>,
-  List: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+  List: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16"></path></svg>,
+  ArrowLeft: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth="3" d="M19 12H5m7-7l-7 7 7 7"></path></svg>
 };
 
+// --- FUNÇÕES UTILITÁRIAS ---
+const parseNumberStrict = (val) => {
+  if (!val && val !== 0) return 0;
+  if (typeof val === 'number') return val;
+  let str = String(val).trim();
+  if (str === '-' || str === '') return 0;
+  str = str.replace(/[R$\s]/g, '');
+  if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
+  else if (/\.\d{3}$/.test(str) || str.split('.').length > 2) str = str.replace(/\./g, '');
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+// Coordenadas Centrais das Regiões de SC (Fallback caso a planilha não tenha LAT/LNG)
+const REGION_COORDS = {
+  "GRANDE FLORIANÓPOLIS": [-27.5954, -48.5480],
+  "NORTE CATARINENSE": [-26.3045, -48.8487],
+  "SUL CATARINENSE": [-28.6733, -49.3736],
+  "VALE DO ITAJAÍ": [-26.9194, -49.0661],
+  "OESTE CATARINENSE": [-27.1004, -52.6152],
+  "SERRANA": [-27.8105, -50.3259]
+};
+
+// --- COMPONENTES VISUAIS NATIVOS ---
 const NativeBarChart = ({ data }) => {
-  if (!data || data.length === 0) return null;
+  if (!data || data.length === 0) return <div className="p-4 text-xs font-bold uppercase text-gray-500">Sem dados para o gráfico</div>;
   const maxVal = Math.max(...data.map(d => d.value));
   return (
     <div className="flex h-full items-end gap-2 px-2 pt-8 pb-6 overflow-x-auto">
-      {data.map((item, idx) => (
-        <div key={idx} className="flex flex-col items-center flex-1 min-w-[40px] group relative h-full justify-end">
-          <div className="w-full bg-[#008080] border-2 border-black group-hover:bg-[#c32148] transition-colors relative" 
-               style={{ height: `${maxVal > 0 ? (item.value / maxVal) * 100 : 0}%`, minHeight: '4px' }}></div>
-          <div className="text-[9px] font-black uppercase mt-2 text-center truncate w-full transform -rotate-45 origin-top-left translate-y-2 translate-x-2">{item.name}</div>
-        </div>
-      ))}
+      {data.map((item, idx) => {
+        const heightPct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
+        return (
+          <div key={idx} className="flex flex-col items-center flex-1 min-w-[40px] group relative h-full justify-end">
+            <div className="opacity-0 group-hover:opacity-100 absolute -top-8 bg-[#111] text-white text-[10px] font-black uppercase px-2 py-1 whitespace-nowrap z-10 pointer-events-none transition-opacity border-2 border-black">
+              {item.name}: {item.value.toLocaleString()}
+            </div>
+            <div className="w-full bg-[#008080] border-2 border-black group-hover:bg-[#c32148] transition-colors relative" style={{ height: `${heightPct}%`, minHeight: '4px' }}></div>
+            <div className="text-[9px] font-black uppercase mt-2 text-center truncate w-full transform -rotate-45 origin-top-left translate-y-2 translate-x-2">{item.name}</div>
+          </div>
+        );
+      })}
     </div>
   );
 };
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+// --- COMPONENTE DO MAPA LEAFLET DINÂMICO ---
+const LeafletMap = ({ data }) => {
+  const mapRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
 
-  const { munsComVoto, chartDataRegioes } = useMemo(() => {
-    const rawList = Object.values(DATABASE.municipios);
-    const regMap = {};
-    rawList.forEach(m => {
-      if (!regMap[m.regiao]) regMap[m.regiao] = 0;
-      regMap[m.regiao] += m.votos_2026;
-    });
-    
-    return {
-      munsComVoto: rawList.sort((a,b) => b.votos_2026 - a.votos_2026),
-      chartDataRegioes: Object.keys(regMap).map(k => ({ name: k, value: regMap[k] })).sort((a,b) => b.value - a.value)
-    };
+  useEffect(() => {
+    // Injeção Dinâmica do Leaflet para evitar erros de Build na Vercel
+    if (!window.L) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = () => setMapReady(true);
+      document.head.appendChild(script);
+    } else {
+      setMapReady(true);
+    }
   }, []);
 
-  const renderDashboard = () => (
-    <div className="space-y-8 animate-[fadeIn_0.3s_ease-in-out]">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="border-4 border-black bg-white p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-          <p className="text-[10px] font-black uppercase text-gray-500 mb-1 tracking-widest">Total Votos (2026)</p>
-          <p className="text-4xl font-black text-[#c32148]">{DATABASE.ano_2026.total_votos.toLocaleString()}</p>
-        </div>
-        <div className="border-4 border-black bg-white p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-          <p className="text-[10px] font-black uppercase text-gray-500 mb-1 tracking-widest">Crescimento vs 2022</p>
-          <p className="text-4xl font-black text-[#008080]">{DATABASE.ano_2026.crescimento_votos_percentual}</p>
-        </div>
-        <div className="border-4 border-black bg-white p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-          <p className="text-[10px] font-black uppercase text-gray-500 mb-1 tracking-widest">Municípios com Votos</p>
-          <p className="text-4xl font-black text-[#111]">{DATABASE.ano_2026.cidades_com_votos}</p>
-        </div>
-      </div>
-      
-      <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
-        <div className="bg-[#111] text-white p-4 border-b-4 border-black">
-          <h3 className="font-black uppercase tracking-wider text-sm flex items-center"><Icons.Chart /> <span className="ml-2">Votos por Região (2026)</span></h3>
-        </div>
-        <div className="h-72 bg-[#f4f4f4] relative p-4"><NativeBarChart data={chartDataRegioes} /></div>
-      </div>
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !window.L || data.length === 0) return;
 
-      <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col">
-        <div className="bg-[#e2b714] text-[#111] p-4 border-b-4 border-black">
-          <h3 className="font-black uppercase tracking-wider text-sm">Top Municípios - Crescimento Estratégico</h3>
-        </div>
-        <table className="w-full text-left text-xs font-bold border-collapse bg-white">
-          <thead className="bg-[#111] text-white uppercase text-[10px]">
-            <tr><th className="p-3 border-r-2 border-black">Município</th><th className="p-3 border-r-2 border-black text-right">Votos 2022</th><th className="p-3 border-r-2 border-black text-right">Votos 2026</th><th className="p-3 text-right">Crescimento</th></tr>
-          </thead>
-          <tbody>
-            {munsComVoto.slice(0, 10).map((m, i) => (
-              <tr key={i} className="border-b-2 border-gray-200">
-                <td className="p-3 border-r-2 border-black uppercase text-sm hover:text-[#008080]">{m.nome}</td>
-                <td className="p-3 border-r-2 border-black text-right text-gray-500">{m.votos_2022.toLocaleString()}</td>
-                <td className="p-3 border-r-2 border-black text-right text-[#c32148] font-black">{m.votos_2026.toLocaleString()}</td>
-                <td className="p-3 text-right text-[#008080]">{m.crescimento}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    const mapContainer = mapRef.current;
+    if (mapContainer._leaflet_id) {
+      mapContainer._leaflet_id = null;
+      mapContainer.innerHTML = ''; 
+    }
+
+    const map = window.L.map(mapContainer).setView([-27.27, -50.49], 7); // Centro de SC
+
+    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 20
+    }).addTo(map);
+
+    // Agrupamento por Região ou Município (dependendo dos dados disponíveis)
+    const bounds = [];
+    const aggregated = {};
+
+    data.forEach(m => {
+      // Se houver coluna LAT/LNG na planilha, usa ela. Senão, agrupa por Região
+      let lat = m.lat ? parseFloat(m.lat) : null;
+      let lng = m.lng ? parseFloat(m.lng) : null;
+      
+      if (!lat || !lng) {
+        const coords = REGION_COORDS[String(m.regiao).toUpperCase()];
+        if (coords) {
+          lat = coords[0] + (Math.random() - 0.5) * 0.5; // Dispersão visual
+          lng = coords[1] + (Math.random() - 0.5) * 0.5;
+        }
+      }
+
+      if (lat && lng) {
+        bounds.push([lat, lng]);
+        const customIcon = window.L.divIcon({
+          className: 'custom-pin',
+          html: `<div style="background-color: #c32148; border: 2px solid #111; color: white; font-weight: 900; padding: 2px 6px; font-size: 10px; box-shadow: 2px 2px 0 #111; transform: translate(-50%, -50%); display: inline-block;">
+                  ${m.votosTotais.toLocaleString()}
+                 </div>`,
+          iconSize: [0, 0]
+        });
+
+        window.L.marker([lat, lng], { icon: customIcon })
+          .bindPopup(`<div style="font-family: sans-serif; text-transform: uppercase;">
+                        <h4 style="font-weight: 900; margin: 0; color: #111; font-size: 14px;">${m.municipio}</h4>
+                        <p style="font-size: 10px; color: #666; margin: 4px 0 0 0;">${m.regiao}</p>
+                        <p style="font-weight: 900; color: #c32148; font-size: 16px; margin: 4px 0 0 0;">${m.votosTotais} VOTOS</p>
+                      </div>`)
+          .addTo(map);
+      }
+    });
+
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+
+    return () => { map.remove(); };
+  }, [mapReady, data]);
+
+  return <div ref={mapRef} className="w-full h-full z-10 bg-gray-100"></div>;
+};
+
+// --- COMPONENTE CHATBOT (Estratégico) ---
+const Chatbot = ({ rawData, munsData }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([{ sender: 'bot', text: 'SISTEMA ATIVO. Como posso ajudar com os dados da base?' }]);
+  const [input, setInput] = useState('');
+
+  const processQuery = (query) => {
+    const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    if (q.includes("total") || q.includes("quantos votos")) {
+      const total = rawData.reduce((acc, curr) => acc + curr.votos, 0);
+      return `Marquito obteve um total de ${total.toLocaleString('pt-BR')} votos na base atual.`;
+    }
+    
+    if (q.includes("melhor regiao") || q.includes("regiao mais")) {
+      const regMap = {};
+      rawData.forEach(d => { regMap[d.regiao] = (regMap[d.regiao] || 0) + d.votos; });
+      const best = Object.entries(regMap).sort((a, b) => b[1] - a[1])[0];
+      return `A região com mais votos é ${best[0]}, somando ${best[1].toLocaleString('pt-BR')} votos.`;
+    }
+
+    // Busca específica por município
+    const mun = munsData.find(m => m.municipio.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === q);
+    if (mun) {
+      return `Em ${mun.municipio} (${mun.regiao}), o registro é de ${mun.votosTotais.toLocaleString('pt-BR')} votos.`;
+    }
+
+    return "Não compreendi ou o dado não está na base. Tente perguntar pelo 'Total', 'Melhor região' ou digite o nome exato de um município.";
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setMessages(prev => [...prev, { sender: 'user', text: userMsg }]);
+    setInput('');
+    setTimeout(() => {
+      const botReply = processQuery(userMsg);
+      setMessages(prev => [...prev, { sender: 'bot', text: botReply }]);
+    }, 500);
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f4f4f4] font-sans">
-      <header className="bg-white border-b-4 border-black p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 shadow-sm z-20">
-        <div className="flex items-center gap-4 border-r-4 border-black pr-6">
-          <div className="w-12 h-12 bg-[#c32148] border-4 border-black text-white flex items-center justify-center font-black text-xl">🗂️</div>
-          <div><h1 className="text-2xl font-black uppercase leading-none">Tabulum</h1><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Base Consolidada 2026</p></div>
-        </div>
-        <div className="flex border-2 border-black bg-[#111] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full sm:w-auto">
-          {[{ id: 'dashboard', label: 'Visão Estratégica', color: 'bg-[#e2b714]' }, { id: 'map', label: 'Mapa Interativo', color: 'bg-[#008080]' }].map((tab) => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 sm:flex-none px-6 py-3 text-xs font-black uppercase tracking-widest transition border-r-2 border-black last:border-r-0 ${activeTab === tab.id ? `${tab.color} text-[#111]` : 'bg-white text-gray-500 hover:bg-gray-200'}`}>{tab.label}</button>
-          ))}
-        </div>
-      </header>
-      <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full max-w-7xl mx-auto">
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'map' && (
-          <div className="border-4 border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] h-[75vh] flex flex-col relative w-full animate-[fadeIn_0.3s_ease-in-out]">
-            <div className="bg-[#111] text-white p-3 border-b-4 border-black flex justify-between items-center"><h3 className="font-black uppercase text-sm flex items-center"><Icons.Map /> <span className="ml-2">MyMaps Integrado</span></h3></div>
-            <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d14197415.861787263!2d-60.106886801931596!3d-27.46914595240228!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x94dfb768e8203f19%3A0xc3b8a3eb4232bf36!2sSanta%20Catarina!5e0!3m2!1spt-BR!2sbr!4v1700000000000!5m2!1spt-BR!2sbr" width="100%" height="100%" className="border-0" allowFullScreen="" loading="lazy"></iframe>
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+      {isOpen && (
+        <div className="w-80 h-96 bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col mb-4">
+          <div className="bg-[#111] text-white p-3 border-b-4 border-black flex justify-between items-center shrink-0">
+             <span className="font-black uppercase text-xs tracking-widest flex items-center gap-2"><Icons.Chat /> Assessor Virtual</span>
+             <button onClick={() => setIsOpen(false)} className="hover:text-[#e2b714] font-black px-2">X</button>
           </div>
-        )}
-      </main>
+          <div className="flex-1 overflow-y-auto p-4 bg-[#f4f4f4] space-y-3">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`p-2 border-2 border-black max-w-[85%] text-xs font-bold uppercase ${msg.sender === 'user' ? 'bg-[#c32148] text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white text-black shadow-[2px_2px_0px_0px_rgba(226,183,20,1)]'}`}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={handleSend} className="border-t-4 border-black flex shrink-0">
+            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Pergunte algo..." className="flex-1 p-2 bg-white text-xs font-bold uppercase outline-none" />
+            <button type="submit" className="bg-[#111] text-white px-4 font-black uppercase hover:bg-[#e2b714] hover:text-black transition-colors border-l-4 border-black">IR</button>
+          </form>
+        </div>
+      )}
+      {!isOpen && (
+        <button onClick={() => setIsOpen(true)} className="w-14 h-14 bg-[#111] border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full flex items-center justify-center hover:scale-110 transition-transform">
+          <Icons.Chat />
+        </button>
+      )}
     </div>
   );
-}
+};
+
+// --- APLICATIVO PRINCIPAL ---
+export default function App() {
+  const [rawData, setRawData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const [activeTab, setActiveTab] = useState('list');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMunicipio, setSelectedMunicipio] = useState(null);
+
+  // Interpretador Resiliente da Planilha
+  const parseJSONData = (json) => {
+    let parsedRows = [];
+    const targetArray = json.estado || json.votos || json.dados || json.capital || json;
+    if (!Array.isArray(targetArray) || targetArray.length < 2) throw new Error("Formato de JSON inválido ou vazio.");
+
+    const normalizeKey = (k) => String(k).trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+    if (Array.isArray(targetArray[0])) {
+      const headers = targetArray[0].map(normalizeKey);
+      const idx = {
+        municipio: headers.findIndex(h => h === 'MUNICIPIO' || h === 'CIDADE'),
+        regiao: headers.findIndex(h => h.includes('REGIAO')),
+        bairro: headers.findIndex(h => h === 'BAIRRO'),
+        votos: headers.findIndex(h => h.includes('QUANTIDADE DE VOTOS') || h === 'VOTOS')
+      };
+
+      if (idx.municipio === -1 || idx.votos === -1) throw new Error("Colunas obrigatórias não encontradas.");
+
+      parsedRows = targetArray.slice(1).map(row => ({
+        municipio: row[idx.municipio] || '',
+        regiao: idx.regiao > -1 ? row[idx.regiao] || 'Sem Região' : 'Sem Região',
+        bairro: idx.bairro > -1 ? row[idx.bairro] || '' : '',
+        votos: idx.votos > -1 ? parseNumberStrict(row[idx.votos]) : 0,
+        // Suporte futuro a coordenadas no mapa
+        lat: headers.includes('LATITUDE') ? row[headers.indexOf('LATITUDE')] : null,
+        lng: headers.includes('LONGITUDE') ? row[headers.indexOf('LONGITUDE')] : null
+      }));
+    }
+    return parsedRows.filter(r => r.municipio && String(r.municipio).trim() !== "");
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      if (!API_URL) { setError("VITE_SCRIPT_URL não definida na Vercel."); setLoading(false); return;
